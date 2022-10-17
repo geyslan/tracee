@@ -1,11 +1,13 @@
 package filters
 
 import (
+	"encoding/binary"
 	"strings"
 	"unsafe"
 
 	bpf "github.com/aquasecurity/libbpfgo"
 	"github.com/aquasecurity/tracee/pkg/filters/sets"
+	"github.com/aquasecurity/tracee/pkg/utils"
 )
 
 type StringFilter struct {
@@ -209,7 +211,7 @@ func (f *StringFilter) NotEqual() []string {
 	return res
 }
 
-func (filter *StringFilter) FilterOut() bool {
+func (filter *StringFilter) DefaultFilter() bool {
 	if len(filter.Equal()) > 0 && len(filter.NotEqual()) == 0 {
 		return false
 	} else {
@@ -229,12 +231,9 @@ func NewBPFStringFilter(mapName string) *BPFStringFilter {
 	}
 }
 
-func (filter *BPFStringFilter) InitBPF(bpfModule *bpf.Module) error {
+func (filter *BPFStringFilter) InitBPF(bpfModule *bpf.Module, filterScopeID uint) error {
 	// MaxBpfStrFilterSize value should match MAX_STR_FILTER_SIZE defined in BPF code
 	const maxBpfStrFilterSize = 16
-
-	bpfFilterEqual := uint32(filterEqual) // const need local var for bpfMap.Update()
-	bpfFilterNotEqual := uint32(filterNotEqual)
 
 	if !filter.Enabled() {
 		return nil
@@ -245,12 +244,28 @@ func (filter *BPFStringFilter) InitBPF(bpfModule *bpf.Module) error {
 		return err
 	}
 
+	filterVal := make([]byte, 16)
+
 	//Initialize the associated bpfMap
 	//First initialize notEqual values since equality should take precedence
 	for str := range filter.notEqual {
 		byteStr := make([]byte, maxBpfStrFilterSize)
 		copy(byteStr, str)
-		if err := bpfMap.Update(unsafe.Pointer(&byteStr[0]), unsafe.Pointer(&bpfFilterNotEqual)); err != nil {
+
+		var bitmask, validBits uint64
+		curVal, err := bpfMap.GetValue(unsafe.Pointer(&byteStr[0]))
+		if err == nil {
+			bitmask = binary.LittleEndian.Uint64(curVal[0:8])
+			validBits = binary.LittleEndian.Uint64(curVal[8:16])
+		}
+
+		// filterNotEqual == 0, so clear n bitmask bit
+		utils.ClearBit(&bitmask, filterScopeID)
+		utils.SetBit(&validBits, filterScopeID)
+
+		binary.LittleEndian.PutUint64(filterVal[0:8], bitmask)
+		binary.LittleEndian.PutUint64(filterVal[8:16], validBits)
+		if err = bpfMap.Update(unsafe.Pointer(&byteStr[0]), unsafe.Pointer(&filterVal[0])); err != nil {
 			return err
 		}
 	}
@@ -259,7 +274,21 @@ func (filter *BPFStringFilter) InitBPF(bpfModule *bpf.Module) error {
 	for str := range filter.equal {
 		byteStr := make([]byte, maxBpfStrFilterSize)
 		copy(byteStr, str)
-		if err := bpfMap.Update(unsafe.Pointer(&byteStr[0]), unsafe.Pointer(&bpfFilterEqual)); err != nil {
+
+		var bitmask, validBits uint64
+		curVal, err := bpfMap.GetValue(unsafe.Pointer(&byteStr[0]))
+		if err == nil {
+			bitmask = binary.LittleEndian.Uint64(curVal[0:8])
+			validBits = binary.LittleEndian.Uint64(curVal[8:16])
+		}
+
+		// filterEqual == 1, so set n bitmask bit
+		utils.SetBit(&bitmask, filterScopeID)
+		utils.SetBit(&validBits, filterScopeID)
+
+		binary.LittleEndian.PutUint64(filterVal[0:8], bitmask)
+		binary.LittleEndian.PutUint64(filterVal[8:16], validBits)
+		if err = bpfMap.Update(unsafe.Pointer(&byteStr[0]), unsafe.Pointer(&filterVal[0])); err != nil {
 			return err
 		}
 	}

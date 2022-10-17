@@ -31,10 +31,105 @@ func (t *Tracee) processLostEvents() {
 
 // shouldProcessEvent decides whether or not to drop an event before further processing it
 func (t *Tracee) shouldProcessEvent(ctx *bufferdecoder.Context, args []trace.Argument) bool {
-	retPassed := t.config.Filter.RetFilter.Filter(ctx.EventID, ctx.Retval)
-	argPassed := t.config.Filter.ArgFilter.Filter(ctx.EventID, args)
+	origMatchedScopes := ctx.MatchedScopes
+	matchedScopes := ctx.MatchedScopes
 
-	return retPassed && argPassed
+	for filterScope := range t.config.FilterScopes.UserSpaceMap() {
+		bitOffset := uint(filterScope.ID)
+
+		// Since we can trace events without options, they can be submitted
+		// without scopes information.
+		// In such cases, we must set the scope bit when a match occurs.
+		if origMatchedScopes == 0 {
+			filterRetVal := filterScope.RetFilter.Filter(ctx.EventID, ctx.Retval)
+			filterArg := filterScope.ArgFilter.Filter(ctx.EventID, args)
+			filterUID := filterScope.UIDFilter.Enabled() && filterScope.UIDFilter.InMinMaxRange(ctx.Uid)
+			filterPID := filterScope.PIDFilter.Enabled() && filterScope.PIDFilter.InMinMaxRange(ctx.HostTid)
+			filterUTS := filterScope.UTSFilter.Enabled()
+			filterComm := filterScope.CommFilter.Enabled()
+			filterCont := filterScope.ContFilter.Enabled()
+			filterContID := filterScope.ContIDFilter.Enabled()
+			filterNewCont := filterScope.NewContFilter.Enabled()
+			filterMntNS := filterScope.MntNSFilter.Enabled()
+			filterPidNS := filterScope.PidNSFilter.Enabled()
+			filterNewPid := filterScope.NewPidFilter.Enabled()
+			filterProcTree := filterScope.ProcessTreeFilter.Enabled()
+			// filterCgroupID := filterScope.CgroupID.Filter.Enabled()
+			filterFollow := filterScope.Follow
+
+			if !filterRetVal || !filterArg ||
+				filterUID || filterPID || filterUTS || filterComm ||
+				filterCont || filterContID || filterNewCont || filterMntNS ||
+				filterPidNS || filterNewPid || filterProcTree || filterFollow /* || filterCgroupID */ {
+
+				continue
+			}
+
+			if filterScope.CheckEventsInUserSpace &&
+				filterScope.IsEventTraceable(ctx.EventID) {
+
+				utils.SetBit(&matchedScopes, bitOffset)
+				continue
+			}
+
+			if filterScope.CheckSetsInUserSpace &&
+				filterScope.IsSetTraceable(events.Definitions.Get(ctx.EventID).Sets) {
+
+				utils.SetBit(&matchedScopes, bitOffset)
+				continue
+			}
+
+			continue
+		}
+
+		// Events submitted with matching scopes.
+		// The scope must have its bit cleared when it does not match.
+		if origMatchedScopes != 0 && utils.HasBit(origMatchedScopes, bitOffset) {
+			if filterScope.CheckEventsInUserSpace &&
+				!filterScope.IsEventTraceable(ctx.EventID) {
+
+				utils.ClearBit(&matchedScopes, bitOffset)
+				continue
+			}
+
+			if filterScope.CheckSetsInUserSpace &&
+				!filterScope.IsSetTraceable(events.Definitions.Get(ctx.EventID).Sets) {
+
+				utils.ClearBit(&matchedScopes, bitOffset)
+				continue
+			}
+
+			if !filterScope.RetFilter.Filter(ctx.EventID, ctx.Retval) {
+				utils.ClearBit(&matchedScopes, bitOffset)
+				continue
+			}
+
+			if !filterScope.ArgFilter.Filter(ctx.EventID, args) {
+				utils.ClearBit(&matchedScopes, bitOffset)
+				continue
+			}
+
+			if filterScope.UIDFilter.Enabled() &&
+				!filterScope.UIDFilter.InMinMaxRange(ctx.Uid) {
+
+				utils.ClearBit(&matchedScopes, bitOffset)
+				continue
+			}
+
+			if filterScope.PIDFilter.Enabled() &&
+				!filterScope.PIDFilter.InMinMaxRange(ctx.HostTid) {
+
+				utils.ClearBit(&matchedScopes, bitOffset)
+				continue
+			}
+
+			continue
+		}
+	}
+
+	ctx.MatchedScopes = matchedScopes
+
+	return matchedScopes != 0
 }
 
 func (t *Tracee) deleteProcInfoDelayed(hostTid int) {

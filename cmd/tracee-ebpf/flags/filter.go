@@ -2,6 +2,7 @@ package flags
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	tracee "github.com/aquasecurity/tracee/pkg/ebpf"
@@ -80,36 +81,7 @@ To 'escape' those operators, please use single quotes, e.g.: 'uid>0'
 `
 }
 
-func PrepareFilter(filtersArr []string) (tracee.Filter, error) {
-	filter := tracee.Filter{
-		UIDFilter:         filters.NewBPFUInt32Filter(tracee.UIDFilterMap),
-		PIDFilter:         filters.NewBPFUInt32Filter(tracee.PIDFilterMap),
-		NewPidFilter:      filters.NewBoolFilter(),
-		MntNSFilter:       filters.NewBPFUIntFilter(tracee.MntNSFilterMap),
-		PidNSFilter:       filters.NewBPFUIntFilter(tracee.PidNSFilterMap),
-		UTSFilter:         filters.NewBPFStringFilter(tracee.UTSFilterMap),
-		CommFilter:        filters.NewBPFStringFilter(tracee.CommFilterMap),
-		ContFilter:        filters.NewBoolFilter(),
-		NewContFilter:     filters.NewBoolFilter(),
-		ContIDFilter:      filters.NewContainerFilter(tracee.CgroupIdFilterMap),
-		RetFilter:         filters.NewRetFilter(),
-		ArgFilter:         filters.NewArgFilter(),
-		ProcessTreeFilter: filters.NewProcessTreeFilter(tracee.ProcessTreeFilterMap),
-		EventsToTrace:     []events.ID{},
-		NetFilter: &tracee.NetIfaces{
-			Ifaces: []string{},
-		},
-	}
-
-	eventFilter := cliFilter{
-		Equal:    []string{},
-		NotEqual: []string{},
-	}
-	setFilter := cliFilter{
-		Equal:    []string{},
-		NotEqual: []string{},
-	}
-
+func PrepareFilterScopes(filtersArr []string) (*tracee.FilterScopes, error) {
 	eventsNameToID := events.Definitions.NamesToIDs()
 	// remove internal events since they shouldn't be accesible by users
 	for event, id := range eventsNameToID {
@@ -118,187 +90,251 @@ func PrepareFilter(filtersArr []string) (tracee.Filter, error) {
 		}
 	}
 
-	for _, filterFlag := range filtersArr {
-		filterName := filterFlag
-		operatorAndValues := ""
+	processFilterFlag := func(filterFlag string) (filterName, operatorAndValues string, scopeIdx int, err error) {
+		scopeID := 1
 		operatorIndex := strings.IndexAny(filterFlag, "=!<>")
-		if operatorIndex > 0 {
-			filterName = filterFlag[0:operatorIndex]
-			operatorAndValues = filterFlag[operatorIndex:]
+		if operatorIndex == -1 {
+			return "", "", 0, filters.InvalidExpression(filterFlag)
 		}
 
+		dashIndex := strings.LastIndex(filterFlag[0:operatorIndex], "-")
+		if dashIndex != -1 {
+			if dashIndex+1 >= len(filterFlag) {
+				return "", "", 0, filters.InvalidExpression(filterFlag)
+			}
+			scopeID, err = strconv.Atoi(filterFlag[dashIndex+1 : operatorIndex])
+			if err != nil {
+				return "", "", 0, err
+			}
+			if scopeID < 1 || scopeID > tracee.MaxFilterScopes {
+				return "", "", 0, filters.InvalidExpression(fmt.Sprintf("[%s] scopes must be between 1 and %d", filterFlag, tracee.MaxFilterScopes))
+			}
+		} else {
+			dashIndex = operatorIndex
+		}
+		filterName = filterFlag[0:dashIndex]
+		operatorAndValues = filterFlag[operatorIndex:]
+		scopeIdx = scopeID - 1
+
+		return
+	}
+
+	type processedFilterFlag struct {
+		filterFlag        string
+		filterName        string
+		operatorAndValues string
+	}
+	processedScopesFilterFlags := map[int][]processedFilterFlag{}
+
+	for _, filterFlag := range filtersArr {
+		filterName, operatorAndValues, scopeIdx, err := processFilterFlag(filterFlag)
+		if err != nil {
+			return nil, err
+		}
 		if len(operatorAndValues) == 1 || operatorAndValues == "!=" || operatorAndValues == "<=" || operatorAndValues == ">=" {
-			return tracee.Filter{}, filters.InvalidExpression(filterFlag)
+			return nil, filters.InvalidExpression(filterFlag)
 		}
 
-		if strings.Contains(filterFlag, ".retval") {
-			err := filter.RetFilter.Parse(filterName, operatorAndValues, eventsNameToID)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if strings.Contains(filterFlag, ".") {
-			err := filter.ArgFilter.Parse(filterName, operatorAndValues, eventsNameToID)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		// The filters which are more common (container, event, pid, set, uid) can be given using a prefix of them.
-		// Other filters should be given using their full name.
-		// To avoid collisions between filters that share the same prefix, put the filters which should have an exact match first!
-		if filterName == "comm" {
-			err := filter.CommFilter.Parse(operatorAndValues)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if strings.HasPrefix("container", filterName) {
-			if operatorAndValues == "=new" {
-				err := filter.NewContFilter.Parse("new")
-				if err != nil {
-					return tracee.Filter{}, err
-				}
-				continue
-			}
-			if operatorAndValues == "!=new" {
-				err := filter.ContFilter.Parse(filterName)
-				if err != nil {
-					return tracee.Filter{}, err
-				}
-				err = filter.NewContFilter.Parse("!new")
-				if err != nil {
-					return tracee.Filter{}, err
-				}
-				continue
-			}
-			if strings.Contains(operatorAndValues, "=") {
-				err := filter.ContIDFilter.Parse(operatorAndValues)
-				if err != nil {
-					return tracee.Filter{}, err
-				}
-				continue
-			}
-			err := filter.ContFilter.Parse(filterName)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if strings.HasPrefix("!container", filterName) {
-			err := filter.ContFilter.Parse(filterName)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if strings.HasPrefix("event", filterName) {
-			err := eventFilter.Parse(operatorAndValues)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if strings.HasPrefix(filterName, "net") {
-			err := filter.NetFilter.Parse(strings.TrimPrefix(operatorAndValues, "="))
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if filterName == "mntns" {
-			if strings.ContainsAny(operatorAndValues, "<>") {
-				return tracee.Filter{}, filters.InvalidExpression(operatorAndValues)
-			}
-			err := filter.MntNSFilter.Parse(operatorAndValues)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if filterName == "pidns" {
-			if strings.ContainsAny(operatorAndValues, "<>") {
-				return tracee.Filter{}, filters.InvalidExpression(operatorAndValues)
-			}
-			err := filter.PidNSFilter.Parse(operatorAndValues)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if filterName == "tree" {
-			err := filter.ProcessTreeFilter.Parse(operatorAndValues)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if strings.HasPrefix("pid", filterName) {
-			if operatorAndValues == "=new" {
-				filter.NewPidFilter.Parse("new")
-				continue
-			}
-			if operatorAndValues == "!=new" {
-				filter.NewPidFilter.Parse("!new")
-				continue
-			}
-			err := filter.PIDFilter.Parse(operatorAndValues)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if strings.HasPrefix("set", filterName) {
-			err := setFilter.Parse(operatorAndValues)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if filterName == "uts" {
-			err := filter.UTSFilter.Parse(operatorAndValues)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if strings.HasPrefix("uid", filterName) {
-			err := filter.UIDFilter.Parse(operatorAndValues)
-			if err != nil {
-				return tracee.Filter{}, err
-			}
-			continue
-		}
-
-		if strings.HasPrefix("follow", filterFlag) {
-			filter.Follow = true
-			continue
-		}
-		return tracee.Filter{}, InvalidFilterOptionError(filterFlag)
+		processedScopesFilterFlags[scopeIdx] = append(processedScopesFilterFlags[scopeIdx], processedFilterFlag{
+			filterFlag:        filterFlag,
+			filterName:        filterName,
+			operatorAndValues: operatorAndValues,
+		})
 	}
 
-	var err error
-	filter.EventsToTrace, err = prepareEventsToTrace(eventFilter, setFilter, eventsNameToID)
-	if err != nil {
-		return tracee.Filter{}, err
+	filterScopes := tracee.NewFilterScopes()
+	for scopeIdx, scopeFilterFlags := range processedScopesFilterFlags {
+		filterScope := tracee.NewFilterScope()
+		eventFilter := cliFilter{
+			Equal:    []string{},
+			NotEqual: []string{},
+		}
+		setFilter := cliFilter{
+			Equal:    []string{},
+			NotEqual: []string{},
+		}
+
+		for _, procFilterFlag := range scopeFilterFlags {
+
+			if strings.Contains(procFilterFlag.filterFlag, ".retval") {
+				err := filterScope.RetFilter.Parse(procFilterFlag.filterName, procFilterFlag.operatorAndValues, eventsNameToID)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			if strings.Contains(procFilterFlag.filterFlag, ".") {
+				err := filterScope.ArgFilter.Parse(procFilterFlag.filterName, procFilterFlag.operatorAndValues, eventsNameToID)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			// The filters which are more common (container, event, pid, set, uid) can be given using a prefix of them.
+			// Other filters should be given using their full name.
+			// To avoid collisions between filters that share the same prefix, put the filters which should have an exact match first!
+			if procFilterFlag.filterName == "comm" {
+				err := filterScope.CommFilter.Parse(procFilterFlag.operatorAndValues)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			if strings.HasPrefix("container", procFilterFlag.filterName) {
+				if procFilterFlag.operatorAndValues == "=new" {
+					err := filterScope.NewContFilter.Parse("new")
+					if err != nil {
+						return nil, err
+					}
+					continue
+				}
+				if procFilterFlag.operatorAndValues == "!=new" {
+					err := filterScope.ContFilter.Parse(procFilterFlag.filterName)
+					if err != nil {
+						return nil, err
+					}
+					err = filterScope.NewContFilter.Parse("!new")
+					if err != nil {
+						return nil, err
+					}
+					continue
+				}
+				if strings.Contains(procFilterFlag.operatorAndValues, "=") {
+					err := filterScope.ContIDFilter.Parse(procFilterFlag.operatorAndValues)
+					if err != nil {
+						return nil, err
+					}
+					continue
+				}
+				err := filterScope.ContFilter.Parse(procFilterFlag.filterName)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			if strings.HasPrefix("!container", procFilterFlag.filterName) {
+				err := filterScope.ContFilter.Parse(procFilterFlag.filterName)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			if strings.HasPrefix("event", procFilterFlag.filterName) {
+				err := eventFilter.Parse(procFilterFlag.operatorAndValues)
+				if err != nil {
+					return nil, err
+				}
+				filterScope.CheckEventsInUserSpace = eventFilter.Enabled()
+				continue
+			}
+
+			if strings.HasPrefix(procFilterFlag.filterName, "net") {
+				err := filterScope.NetFilter.Parse(strings.TrimPrefix(procFilterFlag.operatorAndValues, "="))
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			if procFilterFlag.filterName == "mntns" {
+				if strings.ContainsAny(procFilterFlag.operatorAndValues, "<>") {
+					return nil, filters.InvalidExpression(procFilterFlag.operatorAndValues)
+				}
+				err := filterScope.MntNSFilter.Parse(procFilterFlag.operatorAndValues)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			if procFilterFlag.filterName == "pidns" {
+				if strings.ContainsAny(procFilterFlag.operatorAndValues, "<>") {
+					return nil, filters.InvalidExpression(procFilterFlag.operatorAndValues)
+				}
+				err := filterScope.PidNSFilter.Parse(procFilterFlag.operatorAndValues)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			if procFilterFlag.filterName == "tree" {
+				err := filterScope.ProcessTreeFilter.Parse(procFilterFlag.operatorAndValues)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			if strings.HasPrefix("pid", procFilterFlag.filterName) {
+				if procFilterFlag.operatorAndValues == "=new" {
+					filterScope.NewPidFilter.Parse("new")
+					continue
+				}
+				if procFilterFlag.operatorAndValues == "!=new" {
+					filterScope.NewPidFilter.Parse("!new")
+					continue
+				}
+				err := filterScope.PIDFilter.Parse(procFilterFlag.operatorAndValues)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			if strings.HasPrefix("set", procFilterFlag.filterName) {
+				err := setFilter.Parse(procFilterFlag.operatorAndValues)
+				if err != nil {
+					return nil, err
+				}
+				filterScope.CheckSetsInUserSpace = setFilter.Enabled()
+				continue
+			}
+
+			if procFilterFlag.filterName == "uts" {
+				err := filterScope.UTSFilter.Parse(procFilterFlag.operatorAndValues)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			if strings.HasPrefix("uid", procFilterFlag.filterName) {
+				err := filterScope.UIDFilter.Parse(procFilterFlag.operatorAndValues)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			if strings.HasPrefix("follow", procFilterFlag.filterFlag) {
+				filterScope.Follow = true
+				continue
+			}
+
+			return nil, InvalidFilterOptionError(procFilterFlag.filterFlag)
+		}
+
+		var err error
+		filterScope.EventsToTrace, err = prepareEventsToTrace(eventFilter, setFilter, eventsNameToID)
+		if err != nil {
+			return nil, err
+		}
+		for _, eqSet := range setFilter.Equal {
+			filterScope.SetsToTrace[eqSet] = true
+		}
+
+		if err := filterScopes.Set(scopeIdx, &filterScope); err != nil {
+			return nil, err
+		}
 	}
 
-	return filter, nil
+	return &filterScopes, nil
 }
 
 func prepareEventsToTrace(eventFilter cliFilter, setFilter cliFilter, eventsNameToID map[string]events.ID) ([]events.ID, error) {
@@ -410,4 +446,8 @@ func (filter *cliFilter) Parse(operatorAndValues string) error {
 	}
 
 	return nil
+}
+
+func (filter *cliFilter) Enabled() bool {
+	return len(filter.Equal) > 0 || len(filter.NotEqual) > 0
 }

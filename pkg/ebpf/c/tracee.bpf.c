@@ -691,7 +691,8 @@ typedef struct event_context {
     u64 ts; // Timestamp
     task_context_t task;
     u32 eventid;
-    u32 matched_scopes;
+    u32 padding; // free for further use
+    u64 matched_scopes;
     s64 retval;
     u32 stack_id;
     u16 processor_id; // The ID of the processor which processed the event
@@ -725,8 +726,8 @@ typedef struct task_info {
     bool syscall_traced;  // indicates that syscall_data is valid
     bool recompute_scope; // recompute matched_scopes (new task/context changed/policy changed)
     bool new_task;        // set if this task was started after tracee. Used with new_pid filter
-    u32 follow_in_scopes; // bitmap of scopes for which this task should be followed
-    u32 matched_scopes;   // cached bitmap of scopes this task matched
+    u64 follow_in_scopes; // bitmap of scopes for which this task should be followed
+    u64 matched_scopes;   // cached bitmap of scopes this task matched
     u8 container_state;   // the state of the container the task resides in
 } task_info_t;
 
@@ -757,43 +758,39 @@ typedef struct ksym_name {
     char str[MAX_KSYM_NAME_SIZE];
 } ksym_name_t;
 
-// todo: add filter_enabled configs in userspace
 typedef struct config_entry {
     u32 tracee_pid;
     u32 options;
     u32 cgroup_v1_hid;
-    u32 uid_filter_enabled;
-    u32 pid_filter_enabled;
-    u32 mnt_ns_filter_enabled;
-    u32 pid_ns_filter_enabled;
-    u32 uts_ns_filter_enabled;
-    u32 comm_filter_enabled;
-    u32 cgroup_id_filter_enabled;
-    u32 cont_filter_enabled;
-    u32 new_cont_filter_enabled;
-    u32 new_pid_filter_enabled;
-    u32 proc_tree_filter_enabled;
-    u32 follow_filter_enabled;
-    u32 uid_filter_out;
-    u32 pid_filter_out;
-    u32 mnt_ns_filter_out;
-    u32 pid_ns_filter_out;
-    u32 uts_ns_filter_out;
-    u32 comm_filter_out;
-    u32 cgroup_id_filter_out;
-    u32 cont_filter_out;
-    u32 new_cont_filter_out;
-    u32 new_pid_filter_out;
-    u32 proc_tree_filter_out;
+    u32 padding; // free for further use
+    u64 uid_filter_enabled;
+    u64 pid_filter_enabled;
+    u64 mnt_ns_filter_enabled;
+    u64 pid_ns_filter_enabled;
+    u64 uts_ns_filter_enabled;
+    u64 comm_filter_enabled;
+    u64 cgroup_id_filter_enabled;
+    u64 cont_filter_enabled;
+    u64 new_cont_filter_enabled;
+    u64 new_pid_filter_enabled;
+    u64 proc_tree_filter_enabled;
+    u64 follow_filter_enabled;
+    u64 uid_default_filter;
+    u64 pid_default_filter;
+    u64 mnt_ns_default_filter;
+    u64 pid_ns_default_filter;
+    u64 uts_ns_default_filter;
+    u64 comm_default_filter;
+    u64 cgroup_id_default_filter;
+    u64 cont_default_filter;
+    u64 new_cont_default_filter;
+    u64 new_pid_default_filter;
+    u64 proc_tree_default_filter;
+    u64 valid_scopes;
     u64 uid_max;
     u64 uid_min;
     u64 pid_max;
     u64 pid_min;
-    u64 mnt_ns_max;
-    u64 mnt_ns_min;
-    u64 pid_ns_max;
-    u64 pid_ns_min;
-    u32 valid_scopes;
     u8 events_to_submit[128]; // use 8*128 bits to describe up to 1024 events
 } config_entry_t;
 
@@ -900,8 +897,8 @@ typedef struct bpf_attach {
     enum bpf_write_user_e write_user;
 } bpf_attach_t;
 typedef struct equality {
-    u32 bitmask;
-    u32 valid_bits;
+    u64 bitmask;
+    u64 valid_bits;
 } eq_t;
 
 // KERNEL STRUCTS ----------------------------------------------------------------------------------
@@ -1789,19 +1786,32 @@ static __always_inline int init_event_data(event_data_t *data, void *ctx)
 
 // INTERNAL: FILTERING -----------------------------------------------------------------------------
 
-static __always_inline u32
-uint_filter_matches(u32 filter_out, void *filter_map, u64 value, u64 max, u64 min)
+static __always_inline u64 uint_filter_eq_matches(u64 default_filter, void *filter_map, u64 value)
 {
-    u32 equality_bitmask = 0;
-    u32 equality_valid_bits = 0;
+    u64 equality_bitmask = 0;
+    u64 equality_valid_bits = 0;
     eq_t *equality = bpf_map_lookup_elem(filter_map, &value);
     if (equality != NULL) {
         equality_bitmask = equality->bitmask;
         equality_valid_bits = equality->valid_bits;
     }
 
-    // we can keep this logic by having one global lessThan and greaterThan per each context filter type
-    // if there is more than one filter used, it can be checked in userspace. (very unlikely).
+    return equality_bitmask | (default_filter & ~equality_valid_bits);
+}
+
+static __always_inline u64
+uint_filter_range_matches(u64 default_filter, void *filter_map, u64 value, u64 max, u64 min)
+{
+    u64 equality_bitmask = 0;
+    u64 equality_valid_bits = 0;
+    eq_t *equality = bpf_map_lookup_elem(filter_map, &value);
+    if (equality != NULL) {
+        equality_bitmask = equality->bitmask;
+        equality_valid_bits = equality->valid_bits;
+    }
+
+    // we can keep this logic by having one global Min and Max per each context filter
+    // type if there is more than one filter used, it can be checked in userspace. (very unlikely).
     // there will always be a valid (scope) bitmap in addition to the returned value.
     if ((max != FILTER_MAX_NOT_SET) && (value >= max))
         return equality_bitmask;
@@ -1809,31 +1819,31 @@ uint_filter_matches(u32 filter_out, void *filter_map, u64 value, u64 max, u64 mi
     if ((min != FILTER_MIN_NOT_SET) && (value <= min))
         return equality_bitmask;
 
-    return equality_bitmask | (filter_out & ~equality_valid_bits);
+    return equality_bitmask | (default_filter & ~equality_valid_bits);
 }
 
-static __always_inline u32 equality_filter_matches(u32 filter_out, void *filter_map, void *key)
+static __always_inline u64 equality_filter_matches(u64 default_filter, void *filter_map, void *key)
 {
-    u32 equality_bitmask = 0;
-    u32 equality_valid_bits = 0;
+    u64 equality_bitmask = 0;
+    u64 equality_valid_bits = 0;
     eq_t *equality = bpf_map_lookup_elem(filter_map, key);
     if (equality != NULL) {
         equality_bitmask = equality->bitmask;
         equality_valid_bits = equality->valid_bits;
     }
 
-    return equality_bitmask | (filter_out & ~equality_valid_bits);
+    return equality_bitmask | (default_filter & ~equality_valid_bits);
 }
 
-static __always_inline u32 bool_filter_matches(u32 filter_out, bool val)
+static __always_inline u64 bool_filter_matches(u64 default_filter, bool val)
 {
-    return filter_out ^ (val ? 0xFFFFFFFF : 0);
+    return default_filter ^ (val ? ~0ULL : 0);
 }
 
-static __always_inline u32 do_should_trace(event_data_t *data)
+static __always_inline u64 compute_scopes(event_data_t *data)
 {
     task_context_t *context = &data->context.task;
-    u32 res = 0xFFFFFFFF;
+    u64 res = ~0ULL;
 
     // Don't monitor self
     if (data->config->tracee_pid == context->host_pid) {
@@ -1845,98 +1855,95 @@ static __always_inline u32 do_should_trace(event_data_t *data)
         u8 state = data->task_info->container_state;
         if (state == CONTAINER_STARTED || state == CONTAINER_EXISTED)
             is_container = true;
-        u32 filter_out = data->config->cont_filter_out;
-        u32 mask = ~data->config->cont_filter_enabled;
-        res &= bool_filter_matches(filter_out, is_container) | mask;
+        u64 default_filter = data->config->cont_default_filter;
+        u64 mask = ~data->config->cont_filter_enabled;
+        res &= bool_filter_matches(default_filter, is_container) | mask;
     }
 
     if (data->config->new_cont_filter_enabled) {
         bool is_new_container = false;
         if (data->task_info->container_state == CONTAINER_STARTED)
             is_new_container = true;
-        u32 filter_out = data->config->new_cont_filter_out;
-        u32 mask = ~data->config->new_cont_filter_enabled;
-        res &= bool_filter_matches(filter_out, is_new_container) | mask;
+        u64 default_filter = data->config->new_cont_default_filter;
+        u64 mask = ~data->config->new_cont_filter_enabled;
+        res &= bool_filter_matches(default_filter, is_new_container) | mask;
     }
 
     if (data->config->pid_filter_enabled) {
-        // todo: rename filter_out to default_filter, here and in userspace (for equality/int filters)
-        u32 filter_out = data->config->pid_filter_out;
-        u32 mask = ~data->config->pid_filter_enabled;
+        u64 default_filter = data->config->pid_default_filter;
+        u64 mask = ~data->config->pid_filter_enabled;
         u64 max = data->config->pid_max;
         u64 min = data->config->pid_min;
-        res &= uint_filter_matches(filter_out, &pid_filter, context->host_tid, max, min) | mask;
+        res &= uint_filter_range_matches(default_filter, &pid_filter, context->host_tid, max, min) |
+               mask;
     }
 
     if (data->config->new_pid_filter_enabled) {
-        u32 filter_out = data->config->new_pid_filter_out;
-        u32 mask = ~data->config->new_pid_filter_enabled;
-        res &= bool_filter_matches(filter_out, data->task_info->new_task) | mask;
+        u64 default_filter = data->config->new_pid_default_filter;
+        u64 mask = ~data->config->new_pid_filter_enabled;
+        res &= bool_filter_matches(default_filter, data->task_info->new_task) | mask;
     }
 
     if (data->config->uid_filter_enabled) {
-        u32 filter_out = data->config->uid_filter_out;
-        u32 mask = ~data->config->uid_filter_enabled;
+        u64 default_filter = data->config->uid_default_filter;
+        u64 mask = ~data->config->uid_filter_enabled;
         u64 max = data->config->uid_max;
         u64 min = data->config->uid_min;
-        res &= uint_filter_matches(filter_out, &uid_filter, context->uid, max, min) | mask;
+        res &=
+            uint_filter_range_matches(default_filter, &uid_filter, context->uid, max, min) | mask;
     }
 
     if (data->config->mnt_ns_filter_enabled) {
-        u32 filter_out = data->config->mnt_ns_filter_out;
-        u32 mask = ~data->config->mnt_ns_filter_enabled;
-        u64 max = data->config->mnt_ns_max;
-        u64 min = data->config->mnt_ns_min;
-        res &= uint_filter_matches(filter_out, &mnt_ns_filter, context->mnt_id, max, min) | mask;
+        u64 default_filter = data->config->mnt_ns_default_filter;
+        u64 mask = ~data->config->mnt_ns_filter_enabled;
+        res &= uint_filter_eq_matches(default_filter, &mnt_ns_filter, context->mnt_id) | mask;
     }
 
     if (data->config->pid_ns_filter_enabled) {
-        u32 filter_out = data->config->pid_ns_filter_out;
-        u32 mask = ~data->config->pid_ns_filter_enabled;
-        u64 max = data->config->pid_ns_max;
-        u64 min = data->config->pid_ns_min;
-        res &= uint_filter_matches(filter_out, &pid_ns_filter, context->pid_id, max, min) | mask;
+        u64 default_filter = data->config->pid_ns_default_filter;
+        u64 mask = ~data->config->pid_ns_filter_enabled;
+        res &= uint_filter_eq_matches(default_filter, &pid_ns_filter, context->pid_id) | mask;
     }
 
     if (data->config->uts_ns_filter_enabled) {
-        u32 filter_out = data->config->uts_ns_filter_out;
-        u32 mask = ~data->config->uts_ns_filter_enabled;
-        res &= equality_filter_matches(filter_out, &uts_ns_filter, &context->uts_name) | mask;
+        u64 default_filter = data->config->uts_ns_default_filter;
+        u64 mask = ~data->config->uts_ns_filter_enabled;
+        res &= equality_filter_matches(default_filter, &uts_ns_filter, &context->uts_name) | mask;
     }
 
     if (data->config->comm_filter_enabled) {
-        u32 filter_out = data->config->comm_filter_out;
-        u32 mask = ~data->config->comm_filter_enabled;
-        res &= equality_filter_matches(filter_out, &comm_filter, &context->comm) | mask;
+        u64 default_filter = data->config->comm_default_filter;
+        u64 mask = ~data->config->comm_filter_enabled;
+        res &= equality_filter_matches(default_filter, &comm_filter, &context->comm) | mask;
     }
 
     if (data->config->proc_tree_filter_enabled) {
-        u32 filter_out = data->config->proc_tree_filter_out;
-        u32 mask = ~data->config->proc_tree_filter_enabled;
-        res &= equality_filter_matches(filter_out, &process_tree_map, &context->pid) | mask;
+        u64 default_filter = data->config->proc_tree_default_filter;
+        u64 mask = ~data->config->proc_tree_filter_enabled;
+        res &= equality_filter_matches(default_filter, &process_tree_map, &context->pid) | mask;
     }
 
     if (data->config->cgroup_id_filter_enabled) {
-        u32 filter_out = data->config->cgroup_id_filter_out;
-        u32 mask = ~data->config->cgroup_id_filter_enabled;
-        u32 cgroup_id_lsb = context->cgroup_id;
-        res &= equality_filter_matches(filter_out, &cgroup_id_filter, &cgroup_id_lsb) | mask;
+        u64 default_filter = data->config->cgroup_id_default_filter;
+        u64 mask = ~data->config->cgroup_id_filter_enabled;
+        u64 cgroup_id_lsb = context->cgroup_id;
+        res &= equality_filter_matches(default_filter, &cgroup_id_filter, &cgroup_id_lsb) | mask;
     }
 
     if (data->config->follow_filter_enabled) {
         // trace this task anyway if follow was set by a scope
-        u32 mask = ~data->config->follow_filter_enabled;
+        u64 mask = ~data->config->follow_filter_enabled;
         res |= data->task_info->follow_in_scopes | mask;
     }
 
     return res & data->config->valid_scopes;
 }
 
-static __always_inline u32 should_trace(event_data_t *data)
+static __always_inline u64 should_trace(event_data_t *data)
 {
     // use cache whenever possible
     if (data->task_info->recompute_scope) {
-        data->task_info->matched_scopes = do_should_trace(data);
+        data->task_info->matched_scopes = compute_scopes(data);
         data->task_info->recompute_scope = false;
     }
 
@@ -3538,7 +3545,7 @@ int tracepoint__sched__sched_process_exit(struct bpf_raw_tracepoint_args *ctx)
         return 0;
 
     // evaluate should_trace before removing this pid from the maps
-    bool traced = should_trace(&data);
+    bool traced = !!should_trace(&data);
 
     // Remove this pid from all maps
     bpf_map_delete_elem(&task_info_map, &data.context.task.host_tid);

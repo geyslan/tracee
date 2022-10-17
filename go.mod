@@ -19,7 +19,7 @@ require (
 	github.com/stretchr/testify v1.8.0
 	github.com/urfave/cli/v2 v2.3.0
 	go.uber.org/zap v1.23.0
-	golang.org/x/sys v0.0.0-20220928140112-f11e5e49a4ec
+	golang.org/x/sys v0.1.0
 	google.golang.org/genproto v0.0.0-20220502173005-c8bf987b8c21
 	google.golang.org/grpc v1.49.0
 	google.golang.org/protobuf v1.28.1
@@ -104,3 +104,5 @@ require (
 )
 
 replace github.com/kubernetes/cri-api => k8s.io/cri-api v0.23.5-rc.0
+
+replace github.com/aquasecurity/tracee/types => ./types

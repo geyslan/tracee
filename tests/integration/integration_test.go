@@ -255,17 +255,17 @@ func Test_EventFilters(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
-			filter, err := flags.PrepareFilter(tc.filterArgs)
+			filterScopes, err := flags.PrepareFilterScopes(tc.filterArgs)
 			require.NoError(t, err)
 
 			eventChan := make(chan trace.Event, 1000)
 			config := tracee.Config{
-				Filter:     &filter,
 				ChanEvents: eventChan,
 				Capabilities: &tracee.CapabilitiesConfig{
 					BypassCaps: true,
 				},
 			}
+			config.FilterScopes = filterScopes
 			eventOutput := []trace.Event{}
 
 			go func() {

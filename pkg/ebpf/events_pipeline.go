@@ -12,6 +12,7 @@ import (
 	"github.com/aquasecurity/tracee/pkg/bufferdecoder"
 	"github.com/aquasecurity/tracee/pkg/events"
 	"github.com/aquasecurity/tracee/pkg/events/derive"
+	"github.com/aquasecurity/tracee/pkg/logger"
 	"github.com/aquasecurity/tracee/types/trace"
 )
 
@@ -162,7 +163,7 @@ func (t *Tracee) decodeEvents(outerCtx context.Context) (<-chan *trace.Event, <-
 				args = append(args, trace.Argument{ArgMeta: argMeta, Value: argVal})
 			}
 
-			if !t.shouldProcessEvent(&ctx, args) {
+			if should := t.shouldProcessEvent(&ctx, args); !should {
 				t.stats.EventsFiltered.Increment()
 				continue
 			}
@@ -210,6 +211,7 @@ func (t *Tracee) decodeEvents(outerCtx context.Context) (<-chan *trace.Event, <-
 				PodUID:              containerInfo.Pod.UID,
 				EventID:             int(ctx.EventID),
 				EventName:           eventDefinition.Name,
+				MatchedScopes:       ctx.MatchedScopes,
 				ArgsNum:             int(ctx.Argnum),
 				ReturnValue:         int(ctx.Retval),
 				Args:                args,
@@ -249,17 +251,26 @@ func (t *Tracee) processEvents(ctx context.Context, in <-chan *trace.Event) (<-c
 				continue
 			}
 
-			if (t.config.Filter.ContFilter.Value() || t.config.Filter.NewContFilter.Enabled()) && event.ContainerID == "" {
-				// Don't trace false container positives -
-				// a container filter is set by the user, but this event wasn't originated in a container.
-				// Although kernel filters shouldn't submit such events, we do this check to be on the safe side.
-				// For example, it might be that a new cgroup was created, and not by a container runtime,
-				// while we still didn't processed the cgroup_mkdir event and removed the cgroupid from the bpf container map.
-				id := events.ID(event.EventID)
-				// don't skip cgroup_mkdir and cgroup_rmdir so we can derive container_create and container_remove events
-				if id != events.CgroupMkdir && id != events.CgroupRmdir {
-					continue
+			eventId := events.ID(event.EventID)
+			skippedScopes := 0
+			enabledScopes := t.config.FilterScopes.Count()
+			for filterScope := range t.config.FilterScopes.Map() {
+				if (filterScope.ContFilter.Value() || filterScope.NewContFilter.Enabled()) && event.ContainerID == "" {
+					// Don't trace false container positives -
+					// a container filter is set by the user, but this event wasn't originated in a container.
+					// Although kernel filters shouldn't submit such events, we do this check to be on the safe side.
+					// For example, it might be that a new cgroup was created, and not by a container runtime,
+					// while we still didn't processed the cgroup_mkdir event and removed the cgroupid from the bpf container map.
+					logger.Debug("false container positive", "filterScope.ID", filterScope.ID, "eventId", eventId)
+					// don't skip cgroup_mkdir and cgroup_rmdir so we can derive container_create and container_remove events
+					if eventId != events.CgroupMkdir && eventId != events.CgroupRmdir {
+						logger.Debug("false container positive skipped", "filterScope.ID", filterScope.ID, "eventId", eventId)
+						skippedScopes++
+					}
 				}
+			}
+			if skippedScopes == enabledScopes {
+				continue
 			}
 
 			select {

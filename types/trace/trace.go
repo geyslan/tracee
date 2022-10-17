@@ -36,6 +36,7 @@ type Event struct {
 	PodUID              string       `json:"podUID"`
 	EventID             int          `json:"eventId,string"`
 	EventName           string       `json:"eventName"`
+	MatchedScopes       uint64       `json:"matchedScopes"`
 	ArgsNum             int          `json:"argsNum"`
 	ReturnValue         int          `json:"returnValue"`
 	StackAddresses      []uint64     `json:"stackAddresses"`

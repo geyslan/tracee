@@ -135,7 +135,7 @@ func (filter *BoolFilter) Value() bool {
 	return filter.trueEnabled
 }
 
-func (filter *BoolFilter) FilterOut() bool {
+func (filter *BoolFilter) DefaultFilter() bool {
 	if filter.Value() {
 		return false
 	} else {

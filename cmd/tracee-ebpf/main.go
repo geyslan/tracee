@@ -91,6 +91,14 @@ func main() {
 				ContainersEnrich:   enrich,
 			}
 
+			// Output command line flags
+
+			output, printerConfig, err := flags.PrepareOutput(c.StringSlice("output"))
+			if err != nil {
+				return err
+			}
+			cfg.Output = &output
+
 			// Container Runtime command line flags
 
 			sockets, err := flags.PrepareContainers(c.StringSlice("crs"))
@@ -128,27 +136,18 @@ func main() {
 
 			// Filtering (trace) command line flags
 
-			filter, err := flags.PrepareFilter(c.StringSlice("trace"))
+			filterScopes, err := flags.PrepareFilterScopes(c.StringSlice("trace"))
 			if err != nil {
 				return err
 			}
-			cfg.Filter = &filter
+			cfg.FilterScopes = filterScopes
 
-			// Check if container mode is enabled
+			// Container information printer flag
 
-			containerMode := (cfg.Filter.ContFilter.Enabled() && cfg.Filter.ContFilter.Value()) ||
-				(cfg.Filter.NewContFilter.Enabled() && cfg.Filter.NewContFilter.Value()) ||
-				cfg.Filter.ContIDFilter.Enabled()
-
-			// Output command line flags
-
-			output, printerConfig, err := flags.PrepareOutput(c.StringSlice("output"))
-			if err != nil {
-				return err
+			// enable printer container mode only if requested
+			if c.Bool("container-info") {
+				printerConfig.ContainerMode = filterScopes.ContainerFilterEnabled()
 			}
-
-			printerConfig.ContainerMode = containerMode
-			cfg.Output = &output
 
 			// Check kernel lockdown
 
@@ -355,6 +354,11 @@ func main() {
 				Name:  server.ListenEndpointFlag,
 				Usage: "listening address of the metrics endpoint server",
 				Value: ":3366",
+			},
+			&cli.BoolFlag{
+				Name:  "container-info",
+				Value: false,
+				Usage: "enable container information output when have container filters set",
 			},
 			&cli.BoolFlag{
 				Name:        "containers",

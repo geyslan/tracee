@@ -2,6 +2,7 @@ package filters
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"unsafe"
 
 	bpf "github.com/aquasecurity/libbpfgo"
+	"github.com/aquasecurity/tracee/pkg/utils"
 )
 
 type ProcessTreeFilter struct {
@@ -75,7 +77,7 @@ func (filter *ProcessTreeFilter) Parse(operatorAndValues string) error {
 	return nil
 }
 
-func (filter *ProcessTreeFilter) InitBPF(bpfModule *bpf.Module) error {
+func (filter *ProcessTreeFilter) InitBPF(bpfModule *bpf.Module, filterScopeID uint) error {
 	if !filter.Enabled() {
 		return nil
 	}
@@ -122,8 +124,24 @@ func (filter *ProcessTreeFilter) InitBPF(bpfModule *bpf.Module) error {
 			}
 
 			if shouldBeTraced, ok := filter.PIDs[uint32(ppid)]; ok {
-				trace := boolToUInt32(shouldBeTraced)
-				processTreeBPFMap.Update(unsafe.Pointer(&pid), unsafe.Pointer(&trace))
+				filterVal := make([]byte, 16)
+				var bitmask, validBits uint64
+				curVal, err := processTreeBPFMap.GetValue(unsafe.Pointer(&pid))
+				if err == nil {
+					bitmask = binary.LittleEndian.Uint64(curVal[0:8])
+					validBits = binary.LittleEndian.Uint64(curVal[8:16])
+				}
+
+				if shouldBeTraced {
+					utils.SetBit(&bitmask, filterScopeID)
+				} else {
+					utils.ClearBit(&bitmask, filterScopeID)
+				}
+				utils.SetBit(&validBits, filterScopeID)
+
+				binary.LittleEndian.PutUint64(filterVal[0:8], bitmask)
+				binary.LittleEndian.PutUint64(filterVal[8:16], validBits)
+				processTreeBPFMap.Update(unsafe.Pointer(&pid), unsafe.Pointer(&filterVal[0]))
 				return
 			}
 			fn(uint32(ppid))
@@ -132,14 +150,30 @@ func (filter *ProcessTreeFilter) InitBPF(bpfModule *bpf.Module) error {
 	}
 
 	for pid, shouldBeTraced := range filter.PIDs {
-		trace := boolToUInt32(shouldBeTraced)
-		processTreeBPFMap.Update(unsafe.Pointer(&pid), unsafe.Pointer(&trace))
+		filterVal := make([]byte, 16)
+		var bitmask, validBits uint64
+		curVal, err := processTreeBPFMap.GetValue(unsafe.Pointer(&pid))
+		if err == nil {
+			bitmask = binary.LittleEndian.Uint64(curVal[0:8])
+			validBits = binary.LittleEndian.Uint64(curVal[8:16])
+		}
+
+		if shouldBeTraced {
+			utils.SetBit(&bitmask, filterScopeID)
+		} else {
+			utils.ClearBit(&bitmask, filterScopeID)
+		}
+		utils.SetBit(&validBits, filterScopeID)
+
+		binary.LittleEndian.PutUint64(filterVal[0:8], bitmask)
+		binary.LittleEndian.PutUint64(filterVal[8:16], validBits)
+		processTreeBPFMap.Update(unsafe.Pointer(&pid), unsafe.Pointer(&filterVal[0]))
 	}
 
 	return nil
 }
 
-func (filter *ProcessTreeFilter) FilterOut() bool {
+func (filter *ProcessTreeFilter) DefaultFilter() bool {
 	// Determine the default filter for PIDs that aren't specified with a proc tree filter
 	// - If one or more '=' filters, default is '!='
 	// - If one or more '!=' filters, default is '='
@@ -149,11 +183,4 @@ func (filter *ProcessTreeFilter) FilterOut() bool {
 		filterIn = filterIn && v
 	}
 	return !filterIn
-}
-
-func boolToUInt32(b bool) uint32 {
-	if b {
-		return uint32(1)
-	}
-	return uint32(0)
 }

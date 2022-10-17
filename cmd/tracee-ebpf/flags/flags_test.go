@@ -15,7 +15,7 @@ import (
 )
 
 // This will only test failure cases since success cases are covered in the filter tests themselves
-func TestPrepareFilter(t *testing.T) {
+func TestPrepareFilterScope(t *testing.T) {
 	testCases := []struct {
 		testName      string
 		filters       []string
@@ -49,12 +49,12 @@ func TestPrepareFilter(t *testing.T) {
 		{
 			testName:      "invalid operator",
 			filters:       []string{"uid\t0"},
-			expectedError: flags.InvalidFilterOptionError("uid\t0"),
+			expectedError: filters.InvalidExpression("uid\t0"),
 		},
 		{
 			testName:      "invalid operator",
 			filters:       []string{"mntns\t0"},
-			expectedError: flags.InvalidFilterOptionError("mntns\t0"),
+			expectedError: filters.InvalidExpression("mntns\t0"),
 		},
 		{
 			testName:      "invalid filter type",
@@ -82,8 +82,8 @@ func TestPrepareFilter(t *testing.T) {
 			expectedError: filters.InvalidValue("-1"),
 		},
 		{
-			testName: "invalid uid 1",
-			filters: []string{"uid=	"},
+			testName:      "invalid uid 1",
+			filters:       []string{"uid=\t"},
 			expectedError: filters.InvalidValue("\t"),
 		},
 		{
@@ -239,7 +239,7 @@ func TestPrepareFilter(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.testName, func(t *testing.T) {
-			_, err := flags.PrepareFilter(tc.filters)
+			_, err := flags.PrepareFilterScopes(tc.filters)
 			if tc.expectedError != nil {
 				require.Error(t, err)
 				assert.ErrorContains(t, err, tc.expectedError.Error())
