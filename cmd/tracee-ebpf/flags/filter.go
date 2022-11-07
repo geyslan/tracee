@@ -90,19 +90,19 @@ func PrepareFilterScopes(filtersArr []string) (*tracee.FilterScopes, error) {
 		}
 	}
 
-	processFilterFlag := func(filterFlag string) (filterName, operatorAndValues string, scopeIdx int, err error) {
-		scopeID := 1
-		operatorIndex := strings.IndexAny(filterFlag, "=!<>")
-		if operatorIndex == -1 {
-			return "", "", 0, filters.InvalidExpression(filterFlag)
+	processFilterFlag := func(filterFlag string) (filterName, operatorAndValues string, operatorIdx, scopeIdx int, err error) {
+		scopeIdx = 1
+		operatorIdx = strings.IndexAny(filterFlag, "=!<>")
+		if operatorIdx == -1 {
+			return "", "", 0, 0, filters.InvalidExpression(filterFlag)
 		}
 
-		dashIndex := strings.LastIndex(filterFlag[0:operatorIndex], "-")
+		dashIndex := strings.LastIndex(filterFlag[0:operatorIdx], "-")
 		if dashIndex != -1 {
 			if dashIndex+1 >= len(filterFlag) {
 				return "", "", 0, 0, filters.InvalidScope(filterFlag)
 			}
-			scopeID, err = strconv.Atoi(filterFlag[dashIndex+1 : operatorIndex])
+			scopeIdx, err = strconv.Atoi(filterFlag[dashIndex+1 : operatorIdx])
 			if err != nil {
 				return "", "", 0, 0, filters.InvalidScope(fmt.Sprintf("%s - %s", filterFlag, err))
 			}
@@ -110,11 +110,12 @@ func PrepareFilterScopes(filtersArr []string) (*tracee.FilterScopes, error) {
 				return "", "", 0, 0, filters.InvalidScope(fmt.Sprintf("%s - scopes must be between 1 and %d", filterFlag, tracee.MaxFilterScopes))
 			}
 		} else {
-			dashIndex = operatorIndex
+			dashIndex = operatorIdx
 		}
+
 		filterName = filterFlag[0:dashIndex]
-		operatorAndValues = filterFlag[operatorIndex:]
-		scopeIdx = scopeID - 1
+		operatorAndValues = filterFlag[operatorIdx:]
+		scopeIdx--
 
 		return
 	}
@@ -123,11 +124,12 @@ func PrepareFilterScopes(filtersArr []string) (*tracee.FilterScopes, error) {
 		filterFlag        string
 		filterName        string
 		operatorAndValues string
+		operatorIdx       int
 	}
 	processedScopesFilterFlags := map[int][]processedFilterFlag{}
 
 	for _, filterFlag := range filtersArr {
-		filterName, operatorAndValues, scopeIdx, err := processFilterFlag(filterFlag)
+		filterName, operatorAndValues, operatorIdx, scopeIdx, err := processFilterFlag(filterFlag)
 		if err != nil {
 			return nil, err
 		}
@@ -139,6 +141,7 @@ func PrepareFilterScopes(filtersArr []string) (*tracee.FilterScopes, error) {
 			filterFlag:        filterFlag,
 			filterName:        filterName,
 			operatorAndValues: operatorAndValues,
+			operatorIdx:       operatorIdx,
 		})
 	}
 
@@ -155,8 +158,9 @@ func PrepareFilterScopes(filtersArr []string) (*tracee.FilterScopes, error) {
 		}
 
 		for _, procFilterFlag := range scopeFilterFlags {
+			filterFlag := procFilterFlag.filterFlag[:procFilterFlag.operatorIdx]
 
-			if strings.Contains(procFilterFlag.filterFlag, ".retval") {
+			if strings.Contains(filterFlag, ".retval") {
 				err := filterScope.RetFilter.Parse(procFilterFlag.filterName, procFilterFlag.operatorAndValues, eventsNameToID)
 				if err != nil {
 					return nil, err
@@ -164,7 +168,7 @@ func PrepareFilterScopes(filtersArr []string) (*tracee.FilterScopes, error) {
 				continue
 			}
 
-			if strings.Contains(procFilterFlag.filterFlag, ".") {
+			if strings.Contains(filterFlag, ".") {
 				err := filterScope.ArgFilter.Parse(procFilterFlag.filterName, procFilterFlag.operatorAndValues, eventsNameToID)
 				if err != nil {
 					return nil, err
