@@ -100,14 +100,14 @@ func PrepareFilterScopes(filtersArr []string) (*tracee.FilterScopes, error) {
 		dashIndex := strings.LastIndex(filterFlag[0:operatorIndex], "-")
 		if dashIndex != -1 {
 			if dashIndex+1 >= len(filterFlag) {
-				return "", "", 0, filters.InvalidExpression(filterFlag)
+				return "", "", 0, 0, filters.InvalidScope(filterFlag)
 			}
 			scopeID, err = strconv.Atoi(filterFlag[dashIndex+1 : operatorIndex])
 			if err != nil {
-				return "", "", 0, err
+				return "", "", 0, 0, filters.InvalidScope(fmt.Sprintf("%s - %s", filterFlag, err))
 			}
-			if scopeID < 1 || scopeID > tracee.MaxFilterScopes {
-				return "", "", 0, filters.InvalidExpression(fmt.Sprintf("[%s] scopes must be between 1 and %d", filterFlag, tracee.MaxFilterScopes))
+			if scopeIdx < 1 || scopeIdx > tracee.MaxFilterScopes {
+				return "", "", 0, 0, filters.InvalidScope(fmt.Sprintf("%s - scopes must be between 1 and %d", filterFlag, tracee.MaxFilterScopes))
 			}
 		} else {
 			dashIndex = operatorIndex

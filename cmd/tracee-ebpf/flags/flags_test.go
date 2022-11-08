@@ -22,6 +22,21 @@ func TestPrepareFilterScope(t *testing.T) {
 		expectedError error
 	}{
 		{
+			testName:      "invalid scope id 1",
+			filters:       []string{"comm-=bash"},
+			expectedError: filters.InvalidScope("comm-=bash"),
+		},
+		{
+			testName:      "invalid scope id 2",
+			filters:       []string{"comm-0=bash"},
+			expectedError: filters.InvalidScope("comm-0=bash"),
+		},
+		{
+			testName:      "invalid scope id 3",
+			filters:       []string{fmt.Sprintf("comm-%d=bash", tracee.MaxFilterScopes+1)},
+			expectedError: filters.InvalidScope(fmt.Sprintf("comm-%d=bash", tracee.MaxFilterScopes+1)),
+		},
+		{
 			testName:      "invalid argfilter 1",
 			filters:       []string{"open."},
 			expectedError: filters.InvalidExpression("open."),
@@ -102,6 +117,14 @@ func TestPrepareFilterScope(t *testing.T) {
 			expectedError: filters.InvalidValue("-1\t"),
 		},
 		{
+			testName: "success - scope 1",
+			filters:  []string{"uid-10=4294967296"},
+		},
+		{
+			testName: "success - scope 2",
+			filters:  []string{"pid-25>50000"},
+		},
+		{
 			testName: "success - large uid filter",
 			filters:  []string{"uid=4294967296"},
 		},
@@ -151,40 +174,81 @@ func TestPrepareFilterScope(t *testing.T) {
 			filters:  []string{"container"},
 		},
 		{
+			testName: "container-2",
+			filters:  []string{"container-2"},
+		},
+		{
 			testName: "container=new",
 			filters:  []string{"container=new"},
+		},
+		{
+			testName: "container-2=new",
+			filters:  []string{"container-2=new"},
 		},
 		{
 			testName: "pid=new",
 			filters:  []string{"pid=new"},
 		},
 		{
+			testName: "pid-2=new",
+			filters:  []string{"pid-2=new"},
+		},
+		{
 			testName: "container=abcd123",
 			filters:  []string{"container=abcd123"},
+		},
+		{
+			testName: "container-2=abcd123",
+			filters:  []string{"container-2=abcd123"},
 		},
 		{
 			testName: "argfilter",
 			filters:  []string{"openat.pathname=/bin/ls,/tmp/tracee", "openat.pathname!=/etc/passwd"},
 		},
 		{
+			testName: "argfilter scope",
+			filters:  []string{"openat.pathname-2=/bin/ls,/tmp/tracee", "openat.pathname-2!=/etc/passwd"},
+		},
+		{
 			testName: "retfilter",
 			filters:  []string{"openat.retval=2", "openat.retval>1"},
+		},
+		{
+			testName: "retfilter scope",
+			filters:  []string{"openat.retval-2=2", "openat.retval-2>1"},
 		},
 		{
 			testName: "wildcard filter",
 			filters:  []string{"event=open*"},
 		},
 		{
+			testName: "wildcard filter scope",
+			filters:  []string{"event-2=open*"},
+		},
+		{
 			testName: "wildcard not filter",
 			filters:  []string{"event!=*"},
+		},
+		{
+			testName: "wildcard not filter scope",
+			filters:  []string{"event-2!=*"},
 		},
 		{
 			testName: "multiple filters",
 			filters:  []string{"uid<1", "mntns=5", "pidns!=3", "pid!=10", "comm=ps", "uts!=abc"},
 		},
 		{
+			testName: "multiple filters scope",
+			filters:  []string{"uid-2<1", "mntns-2=5", "pidns-2!=3", "pid-2!=10", "comm-2=ps", "uts-2!=abc"},
+		},
+		{
 			testName:      "invalid value - extra operator",
 			filters:       []string{"uid==0"},
+			expectedError: filters.InvalidValue("=0"),
+		},
+		{
+			testName:      "invalid value scope - extra operator",
+			filters:       []string{"uid-2==0"},
 			expectedError: filters.InvalidValue("=0"),
 		},
 		{
@@ -193,13 +257,28 @@ func TestPrepareFilterScope(t *testing.T) {
 			expectedError: filters.InvalidValue(">>>>>>>>>>>>>>>>>>>>>>>>>>>>0"),
 		},
 		{
+			testName:      "invalid value scope - extra operator",
+			filters:       []string{"uid-2>>>>>>>>>>>>>>>>>>>>>>>>>>>>>0"},
+			expectedError: filters.InvalidValue(">>>>>>>>>>>>>>>>>>>>>>>>>>>>0"),
+		},
+		{
 			testName:      "invalid value - string in numeric filter",
 			filters:       []string{"uid=a"},
 			expectedError: filters.InvalidValue("a"),
 		},
 		{
+			testName:      "invalid value scope - string in numeric filter",
+			filters:       []string{"uid-2=a"},
+			expectedError: filters.InvalidValue("a"),
+		},
+		{
 			testName:      "invalid pidns",
 			filters:       []string{"pidns=a"},
+			expectedError: filters.InvalidValue("a"),
+		},
+		{
+			testName:      "invalid pidns scope",
+			filters:       []string{"pidns-2=a"},
 			expectedError: filters.InvalidValue("a"),
 		},
 
@@ -208,12 +287,25 @@ func TestPrepareFilterScope(t *testing.T) {
 			filters:  []string{"pid>12"},
 		},
 		{
+			testName: "valid pid scope",
+			filters:  []string{"pid-2>12"},
+		},
+		{
 			testName: "adding retval filter then argfilter",
 			filters:  []string{"open.retval=5", "security_file_open.pathname=/etc/shadow"},
 		},
 		{
+			testName: "adding retval filter then argfilter scope",
+			filters:  []string{"open.retval-2=5", "security_file_open.pathname-2=/etc/shadow"},
+		},
+		{
 			testName:      "invalid wildcard",
 			filters:       []string{"event=blah*"},
+			expectedError: errors.New("invalid event to trace: blah"),
+		},
+		{
+			testName:      "invalid wildcard scope",
+			filters:       []string{"event-2=blah*"},
 			expectedError: errors.New("invalid event to trace: blah"),
 		},
 		{
@@ -222,8 +314,18 @@ func TestPrepareFilterScope(t *testing.T) {
 			expectedError: errors.New("invalid event to trace: bl*ah"),
 		},
 		{
+			testName:      "invalid wildcard scope 2",
+			filters:       []string{"event-2=bl*ah"},
+			expectedError: errors.New("invalid event to trace: bl*ah"),
+		},
+		{
 			testName:      "internal event selection",
 			filters:       []string{"event=print_syscall_table"},
+			expectedError: errors.New("invalid event to trace: print_syscall_table"),
+		},
+		{
+			testName:      "internal event selection scope",
+			filters:       []string{"event-2=print_syscall_table"},
 			expectedError: errors.New("invalid event to trace: print_syscall_table"),
 		},
 		{
@@ -232,8 +334,18 @@ func TestPrepareFilterScope(t *testing.T) {
 			expectedError: errors.New("invalid event to exclude: blah"),
 		},
 		{
+			testName:      "invalid not wildcard scope",
+			filters:       []string{"event-2!=blah*"},
+			expectedError: errors.New("invalid event to exclude: blah"),
+		},
+		{
 			testName:      "invalid not wildcard 2",
 			filters:       []string{"event!=bl*ah"},
+			expectedError: errors.New("invalid event to exclude: bl*ah"),
+		},
+		{
+			testName:      "invalid not wildcard scope 2",
+			filters:       []string{"event-2!=bl*ah"},
 			expectedError: errors.New("invalid event to exclude: bl*ah"),
 		},
 	}
