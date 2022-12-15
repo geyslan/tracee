@@ -14,21 +14,17 @@ const BPFMaxErrFileLen = 72 // BPF_MAX_ERR_FILE_LEN
 type BPFErrorType uint32
 
 const (
-	BPFErrUnspec BPFErrorType = iota // BPF_ERR_UNSPEC
-
-	BPFErrInitContext // BPF_ERR_INIT_CONTEXT
-
-	BPFErrMapUpdateElem  // BPF_ERR_MAP_UPDATE_ELEM
-	BPFErrMapDeleteElem  // BPF_ERR_MAP_DELETE_ELEM
-	BPFErrGetCurrentComm // BPF_ERR_GET_CURRENT_COMM
-	BPFErrTailCall       // BPF_ERR_TAIL_CALL
+	BPFErrUnspec         BPFErrorType = iota // BPF_ERR_UNSPEC
+	BPFErrInitContext                        // BPF_ERR_INIT_CONTEXT
+	BPFErrMapUpdateElem                      // BPF_ERR_MAP_UPDATE_ELEM
+	BPFErrMapDeleteElem                      // BPF_ERR_MAP_DELETE_ELEM
+	BPFErrGetCurrentComm                     // BPF_ERR_GET_CURRENT_COMM
+	BPFErrTailCall                           // BPF_ERR_TAIL_CALL
 )
 
 var stringMap = map[BPFErrorType]string{
-	BPFErrUnspec: "BPF_ERR_UNSPEC",
-
-	BPFErrInitContext: "BPF_ERR_INIT_CONTEXT",
-
+	BPFErrUnspec:         "BPF_ERR_UNSPEC",
+	BPFErrInitContext:    "BPF_ERR_INIT_CONTEXT",
 	BPFErrMapUpdateElem:  "BPF_ERR_MAP_UPDATE_ELEM",
 	BPFErrMapDeleteElem:  "BPF_ERR_MAP_DELETE_ELEM",
 	BPFErrGetCurrentComm: "BPF_ERR_GET_CURRENT_COMM",
@@ -36,10 +32,8 @@ var stringMap = map[BPFErrorType]string{
 }
 
 var errorMap = map[BPFErrorType]string{
-	BPFErrUnspec: "Unspecifed BPF error",
-
-	BPFErrInitContext: "Failed to init context",
-
+	BPFErrUnspec:         "Unspecifed BPF error",
+	BPFErrInitContext:    "Failed to init context",
 	BPFErrMapUpdateElem:  "Failed to add or update a map element",
 	BPFErrMapDeleteElem:  "Failed to delete a map element",
 	BPFErrGetCurrentComm: "Failed to get current command",
@@ -58,13 +52,12 @@ func (b BPFErrorType) String() string {
 type BPFError struct {
 	id       BPFErrorType
 	logLevel logger.Level
-	count    uint32 // percpu error occurrences
-	padding  uint32
-
-	ret  int64                  // return value
-	cpu  uint32                 // cpu number
-	line uint32                 // line number
-	file [BPFMaxErrFileLen]byte // filename
+	count    uint32                 // percpu error occurrences
+	padding  uint32                 // empty space
+	ret      int64                  // return value
+	cpu      uint32                 // cpu number
+	line     uint32                 // line number
+	file     [BPFMaxErrFileLen]byte // filename
 }
 
 func (b BPFError) Error() string {
@@ -132,7 +125,7 @@ func (b *BPFError) Decode(rawBuffer []byte) error {
 	}
 
 	b.id = BPFErrorType(binary.LittleEndian.Uint32(rawBuffer[0:4]))
-	b.logLevel = logger.Level(binary.LittleEndian.Uint32(rawBuffer[4:8]))
+	b.logLevel = logger.Level(binary.LittleEndian.Uint32(rawBuffer[4:8])) // this is an int8 (zapcore.Level)
 	b.count = binary.LittleEndian.Uint32(rawBuffer[8:12])
 	b.padding = binary.LittleEndian.Uint32(rawBuffer[12:16])
 
@@ -141,7 +134,6 @@ func (b *BPFError) Decode(rawBuffer []byte) error {
 	b.cpu = binary.LittleEndian.Uint32(rawBuffer[24:28])
 	b.line = binary.LittleEndian.Uint32(rawBuffer[28:32])
 	copy(b.file[:], rawBuffer[32:104])
-	// bpf_error
 
 	return nil
 }

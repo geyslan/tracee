@@ -942,9 +942,7 @@ enum bpf_error_level
 enum bpf_error_id
 {
     BPF_ERR_UNSPEC = 0U, // enforce enum to u32
-
     BPF_ERR_INIT_CONTEXT,
-
     BPF_ERR_MAP_UPDATE_ELEM,
     BPF_ERR_MAP_DELETE_ELEM,
     BPF_ERR_GET_CURRENT_COMM,
@@ -1038,7 +1036,8 @@ BPF_LRU_HASH(bpf_attach_map, u32, bpf_attach_t, 1024);             // holds bpf 
 BPF_LRU_HASH(bpf_attach_tmp_map, u32, bpf_attach_t, 1024);         // temporarily hold bpf_attach_t
 BPF_PERCPU_ARRAY(cached_event_data_map, event_data_t, 1);          // cached event data between chained tail calls
 BPF_HASH(errors_count, bpf_error_t, bpf_error_count_t, 4096);      // errors count
-BPF_PERCPU_ARRAY(error_output_scratch, bpf_error_output_t, 1);     // error output scratch
+BPF_PERCPU_ARRAY(error_output_scratch, bpf_error_output_t, 1);     // errors output scratch
+
 // clang-format on
 
 // EBPF PERF BUFFERS -------------------------------------------------------------------------------
@@ -1071,34 +1070,35 @@ static __always_inline void do_tracee_error(
     err_output->err.ret = ret;
     err_output->err.cpu = bpf_get_smp_processor_id();
     err_output->err.line = line;
+
     u64 fsize = __builtin_strlen(file);
     if (unlikely(fsize >= BPF_MAX_ERR_FILE_LEN))
         fsize = BPF_MAX_ERR_FILE_LEN - 1;
     __builtin_memcpy(err_output->err.file, file, fsize);
     err_output->err.file[fsize] = '\0';
 
-    bpf_error_count_t counter_buf = {};
-    counter_buf.count = 1;
-    counter_buf.ts = bpf_ktime_get_ns(); // store the current ts
     u64 ts_prev = 0;
+    bpf_error_count_t local_counter = {0}, *counter;
 
-    bpf_error_count_t *counter = bpf_map_lookup_elem(&errors_count, &err_output->err);
+    counter = bpf_map_lookup_elem(&errors_count, &err_output->err);
     if (likely(counter != NULL)) {
-        ts_prev = counter->ts; // store previous ts
-
-        counter->count += 1;
-        counter->ts = counter_buf.ts; // set to current ts
+        __builtin_memcpy(&local_counter, counter, sizeof(bpf_error_count_t));
+        local_counter.count += 1;
+        ts_prev = local_counter.ts;
     } else {
-        counter = &counter_buf;
-        bpf_map_update_elem(&errors_count, &err_output->err, counter, BPF_ANY);
+        local_counter.count = 1;
     }
+
+    local_counter.ts = bpf_ktime_get_ns(); // store the current ts
 
     // submit error when its cpu occurrence time diff is greater than 2s
-    if ((counter->ts - ts_prev) > (u64) 2000000000) {
-        err_output->count = counter->count;
+    if ((local_counter.ts - ts_prev) > (u64) 2000000000) {
+        err_output->count = local_counter.count;
         bpf_perf_event_output(ctx, &errors, BPF_F_CURRENT_CPU, err_output, sizeof(*err_output));
-        counter->count = 0; // reset, assuming that the consumer is incrementing
+        local_counter.count = 0; // reset, assuming that the consumer is incrementing
     }
+
+    bpf_map_update_elem(&errors_count, &err_output->err, &local_counter, BPF_ANY);
 }
 
 #define tracee_error(ctx, level, id, ret) do_tracee_error(ctx, level, id, ret, __LINE__, __FILE__);
