@@ -839,7 +839,7 @@ typedef struct config_entry {
     u32 options;
     u32 cgroup_v1_hid;
     u32 padding; // free for further use
-    //
+    // enabled scopes bitmask per filter
     u64 uid_filter_enabled_scopes;
     u64 pid_filter_enabled_scopes;
     u64 mnt_ns_filter_enabled_scopes;
@@ -853,7 +853,7 @@ typedef struct config_entry {
     u64 proc_tree_filter_enabled_scopes;
     u64 bin_path_filter_enabled_scopes;
     u64 follow_filter_enabled_scopes;
-    //
+    // filter_out bitmask per filter
     u64 uid_filter_out_scopes;
     u64 pid_filter_out_scopes;
     u64 mnt_ns_filter_out_scopes;
@@ -866,9 +866,9 @@ typedef struct config_entry {
     u64 new_pid_filter_out_scopes;
     u64 proc_tree_filter_out_scopes;
     u64 bin_path_filter_out_scopes;
-    //
+    // bitmask with scopes that have at least one filter enabled
     u64 enabled_scopes;
-    //
+    // global min max
     u64 uid_max;
     u64 uid_min;
     u64 pid_max;
@@ -2009,6 +2009,8 @@ static __always_inline u64 uint_filter_eq_matches(u64 filter_out_scopes,
                                                   void *filter_map,
                                                   u64 value)
 {
+    // check equality_filter_matches() for more info
+
     u64 equal_in_scopes = 0;
     u64 set_in_scopes = 0;
     eq_t *equality = bpf_map_lookup_elem(filter_map, &value);
@@ -2023,6 +2025,8 @@ static __always_inline u64 uint_filter_eq_matches(u64 filter_out_scopes,
 static __always_inline u64
 uint_filter_range_matches(u64 filter_out_scopes, void *filter_map, u64 value, u64 max, u64 min)
 {
+    // check equality_filter_matches() for more info
+
     u64 equal_in_scopes = 0;
     u64 set_in_scopes = 0;
     eq_t *equality = bpf_map_lookup_elem(filter_map, &value);
@@ -2041,23 +2045,10 @@ uint_filter_range_matches(u64 filter_out_scopes, void *filter_map, u64 value, u6
     return equal_in_scopes | (filter_out_scopes & ~set_in_scopes);
 }
 
-static __always_inline u64 equality_filter_matches(u64 filter_out_scopes,
-                                                   void *filter_map,
-                                                   void *key)
-{
-    u64 equal_in_scopes = 0;
-    u64 set_in_scopes = 0;
-    eq_t *equality = bpf_map_lookup_elem(filter_map, key);
-    if (equality != NULL) {
-        equal_in_scopes = equality->equal_in_scopes;
-        set_in_scopes = equality->set_in_scopes;
-    }
-
-    return equal_in_scopes | (filter_out_scopes & ~set_in_scopes);
-}
-
 static __always_inline u64 binary_filter_matches(u64 filter_out_scopes, proc_info_t *proc_info)
 {
+    // check equality_filter_matches() for more info
+
     u64 equal_in_scopes = 0;
     u64 set_in_scopes = 0;
     eq_t *equality = bpf_map_lookup_elem(&binary_filter, proc_info->binary.path);
@@ -2073,23 +2064,83 @@ static __always_inline u64 binary_filter_matches(u64 filter_out_scopes, proc_inf
     return equal_in_scopes | (filter_out_scopes & ~set_in_scopes);
 }
 
+static __always_inline u64 equality_filter_matches(u64 filter_out_scopes,
+                                                   void *filter_map,
+                                                   void *key)
+{
+    // check compute_scopes() for initial info
+    //
+    // e.g.: cmdline: -t 2:comm=who -t 3:comm=ping -t 4:comm!=who
+    //
+    // filter_out_scopes = 0000 1000, since scope 4 has "not equal" for comm filter
+    // filter_map        = comm_filter
+    // key               = "who" | "ping"
+    //
+    // ---
+    //
+    // considering an event from "who" command
+    //
+    // equal_in_scopes   = 0000 0010, since scope 2 has "equal" for comm filter
+    // set_in_scopes     = 0000 1010, since scope 2 and 4 are set for comm filter
+    //
+    // return            = equal_in_scopes | (filter_out_scopes & ~set_in_scopes)
+    //                     0000 0010 |
+    //                     (0000 1000 & 1111 0101) -> 0000 0000
+    //
+    //                     0000 0010 |
+    //                     0000 0000
+    //                     ---------
+    //                     0000 0010 = (scope 2 matched)
+    //
+    // considering an event from "ping" command
+    //
+    // equal_in_scopes   = 0000 0100, since scope 3 has "equal" for comm filter
+    // set_in_scopes     = 0000 0100, since scope 3 is set for comm filter
+    //
+    // return            = equal_in_scopes | (filter_out_scopes & ~set_in_scopes)
+    //                     0000 0100 |
+    //                     (0000 1000 & 0000 0100) -> 0000 0000
+    //
+    //                     0000 0100 |
+    //                     0000 0000
+    //                     ---------
+    //                     0000 0100 = (scope 3 matched)
+
+    u64 equal_in_scopes = 0;
+    u64 set_in_scopes = 0;
+    eq_t *equality = bpf_map_lookup_elem(filter_map, key);
+    if (equality != NULL) {
+        equal_in_scopes = equality->equal_in_scopes;
+        set_in_scopes = equality->set_in_scopes;
+    }
+
+    return equal_in_scopes | (filter_out_scopes & ~set_in_scopes);
+}
+
 static __always_inline u64 bool_filter_matches(u64 filter_out_scopes, bool val)
 {
-    // considering:
+    // check compute_scopes() for initial info
     //
-    //   filter_out_scopes = 0000 0010 (scope 2)
+    // e.g.: cmdline: -t 5:container
+    //
+    // considering an event from a container
+    //
+    //   filter_out_scopes = 0000 0000
     //   val               = true
-    //   return            = 0000 0010 ^
-    //                       1111 1111
+    //   return            = 0000 0000 ^
+    //                       1111 1111 <- ~0ULL
     //                       ---------
-    //                       1111 1101
+    //                       1111 1111
     //
-    //   filter_out_scopes = 0000 0010 (scope 2)
+    // considering an event not from a container
+    //
+    //   filter_out_scopes = 0000 0000
     //   val               = false
-    //   return            = 0000 0010 ^
+    //   return            = 0000 0000 ^
     //                       0000 0000
     //                       ---------
-    //                       0000 0010
+    //                       0000 0000
+
     return filter_out_scopes ^ (val ? ~0ULL : 0);
 }
 
@@ -2112,6 +2163,35 @@ static __always_inline u64 compute_scopes(program_data_t *p)
     }
 
     if (p->config->cont_filter_enabled_scopes) {
+        // e.g.: cmdline: -t 5:container
+        //
+        // filter_out_scopes             =  0000 0000
+        // cont_filter_enabled_scopes    =  0001 0000 (scope 5)
+        // mask                          = ~0001 0000 = 1110 1111
+        // res                           =  1111 1111 <- ~0ULL
+        //
+        // ---
+        //
+        // considering an event from a container
+        //
+        // bool_filter_matches(0, true)  = 1111 1111
+        //
+        // res                           = 1111 1111 &
+        //                                 1111 1111 |
+        //                                 1110 1111
+        //                                 ---------
+        //                                 1111 1111 (scope 5 matched)
+        //
+        // considering an event not from a container
+        //
+        // bool_filter_matches(0, false) = 0000 0000
+        //
+        // res                           = 1111 1111 &
+        //                                 0000 0000 |
+        //                                 1110 1111
+        //                                 ---------
+        //                                 1110 1111 (scope 5 unmatched)
+
         bool is_container = false;
         u8 state = p->task_info->container_state;
         if (state == CONTAINER_STARTED || state == CONTAINER_EXISTED)
@@ -2177,6 +2257,36 @@ static __always_inline u64 compute_scopes(program_data_t *p)
     }
 
     if (p->config->comm_filter_enabled_scopes) {
+        // e.g.: cmdline: -t 2:comm=who -t 3:comm=ping -t 4:comm!=who
+        //
+        // filter_out_scopes            =  0000 1000, since scope 4 has "not equal" for comm filter
+        // comm_filter_enabled_scopes   =  0000 1110, since scopes 2, 3 and 4 are enabled
+        // mask                         = ~0000 1110 = 1111 0001
+        //
+        // ---
+        //
+        // considering an event from "who" command
+        //
+        // res                         = 1111 1111 <- ~0ULL
+        // equality_filter_matches()   = 0000 0010
+        //
+        // res                         = 1111 1111 &
+        //                               0000 0010 |
+        //                               1111 0001
+        //                               ---------
+        //                               1111 0011 (scope 3 and 4 unmatched)
+        //
+        // considering an event from "ping" command
+        //
+        // res                         = 1111 1111 <- ~0ULL
+        // equality_filter_matches()   = 0000 0100
+        //
+        // res                         = 1111 1111 &
+        //                               0000 0100 |
+        //                               1111 0001
+        //                               ---------
+        //                               1111 0101 (scope 2 and 4 unmatched)
+
         u64 filter_out_scopes = p->config->comm_filter_out_scopes;
         u64 mask = ~p->config->comm_filter_enabled_scopes;
         res &= equality_filter_matches(filter_out_scopes, &comm_filter, &context->comm) | mask;
@@ -2207,6 +2317,40 @@ static __always_inline u64 compute_scopes(program_data_t *p)
         u64 mask = p->config->follow_filter_enabled_scopes;
         res |= proc_info->follow_in_scopes & mask;
     }
+
+    // e.g.: cmdline: -t 5:container
+    //
+    // considering an event from a container
+    //
+    // res = 1111 1111 &
+    //       0001 0000
+    //       ---------
+    //       0001 0000 (scope 5 match)
+    //
+    // considering an event not from a container
+    //
+    // res = 1110 1111 &
+    //       0001 0000
+    //       ---------
+    //       0000 0000 (no scope match)
+    //
+    // ---
+    //
+    // e.g.: cmdline: -t 2:comm=who -t 3:comm=ping -t 4:comm!=who
+    //
+    // considering an event from "who" command
+    //
+    // res = 1111 0011 &
+    //       0000 1110
+    //       ---------
+    //       0000 0010 (scope 2 match)
+    //
+    // considering an event from "ping" command
+    //
+    // res = 1111 0101 &
+    //       0000 1110
+    //       ---------
+    //       0000 0100 (scope 3 match)
 
     return res & p->config->enabled_scopes;
 }
