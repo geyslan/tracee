@@ -280,6 +280,19 @@ func (t *Tracee) computeScopes(event *trace.Event) uint64 {
 				continue
 			}
 
+			// An event with a matched scope for global min/max range might not match
+			// all scopes with UID and PID filters with different min/max ranges.
+			//
+			// e.g.: -t 59:comm=who -t '59:pid>100' -t '59:pid<1257738' \
+			//       -t 30:comm=who -t '30:pid>502000' -t '30:pid<505000'
+			//
+			// For kernel filtering the flags above would compute
+			//
+			// pid_max = 1257738
+			// pid_min = 100
+			//
+			// So a who command with pid 150 is a match only for the scope 59
+
 			if filterScope.UIDFilter.Enabled() &&
 				!filterScope.UIDFilter.InMinMaxRange(uint32(event.UserID)) {
 
