@@ -7357,11 +7357,12 @@ int BPF_KPROBE(cgroup_bpf_run_filter_skb)
 
     // copy orig task ctx (from the netctx) to event ctx and build the rest
     __builtin_memcpy(&eventctx->task, &netctx->taskctx, sizeof(task_context_t));
-    eventctx->ts = p.event->context.ts;                     // copy timestamp from current ctx
-    eventctx->argnum = 1;                                   // 1 argument (add more if needed)
-    eventctx->eventid = NET_PACKET_IP;                      // will be changed in skb program
-    eventctx->stack_id = 0;                                 // no stack trace
-    eventctx->processor_id = p.event->context.processor_id; // copy from current ctx
+    eventctx->ts = p.event->context.ts;                         // copy timestamp from current ctx
+    eventctx->argnum = 1;                                       // 1 argument (add more if needed)
+    eventctx->eventid = NET_PACKET_IP;                          // will be changed in skb program
+    eventctx->stack_id = 0;                                     // no stack trace
+    eventctx->processor_id = p.event->context.processor_id;     // copy from current ctx
+    eventctx->matched_scopes = p.event->context.matched_scopes; // copy from current ctx
 
     // inform userland about protocol family (for correct L3 header parsing)...
     struct sock_common *common = (void *) sk;
