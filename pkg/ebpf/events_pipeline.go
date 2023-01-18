@@ -229,9 +229,12 @@ func (t *Tracee) decodeEvents(outerCtx context.Context, sourceChan chan []byte) 
 				ContextFlags:        parseContextFlags(ctx.Flags),
 			}
 
-			if !t.shouldProcessEvent(&evt) {
-				t.stats.EventsFiltered.Increment()
-				continue
+			// base events for derived ones should be filtered in later stage
+			if _, ok := t.eventDerivations[eventId]; !ok {
+				if !t.shouldProcessEvent(&evt) {
+					t.stats.EventsFiltered.Increment()
+					continue
+				}
 			}
 
 			select {
@@ -258,9 +261,9 @@ func (t *Tracee) computeScopes(event *trace.Event) uint64 {
 		// Events submitted with matching scopes.
 		// The scope must have its bit cleared when it does not match.
 		if utils.HasBit(origMatchedScopes, bitOffset) {
+
 			// TODO: check if the event is traceable to some scope using a BPF map
 			if !filterScope.IsEventTraceable(eventID) {
-
 				utils.ClearBit(&matchedScopes, bitOffset)
 				continue
 			}
@@ -295,14 +298,12 @@ func (t *Tracee) computeScopes(event *trace.Event) uint64 {
 
 			if filterScope.UIDFilter.Enabled() &&
 				!filterScope.UIDFilter.InMinMaxRange(uint32(event.UserID)) {
-
 				utils.ClearBit(&matchedScopes, bitOffset)
 				continue
 			}
 
 			if filterScope.PIDFilter.Enabled() &&
 				!filterScope.PIDFilter.InMinMaxRange(uint32(event.HostProcessID)) {
-
 				utils.ClearBit(&matchedScopes, bitOffset)
 				continue
 			}
@@ -318,7 +319,6 @@ func (t *Tracee) computeScopes(event *trace.Event) uint64 {
 func (t *Tracee) shouldProcessEvent(event *trace.Event) bool {
 	// As we don't do all the filtering on the ebpf side, we have to update MatchedScopes
 	event.MatchedScopes = t.computeScopes(event)
-
 	return event.MatchedScopes != 0
 }
 
