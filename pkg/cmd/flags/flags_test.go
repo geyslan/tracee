@@ -87,12 +87,12 @@ func TestPrepareFilterScope(t *testing.T) {
 		{
 			testName:      "invalid operator",
 			filters:       []string{"uid\t0"},
-			expectedError: filters.InvalidExpression("uid\t0"),
+			expectedError: flags.InvalidFilterOptionError("uid\t0"),
 		},
 		{
 			testName:      "invalid operator",
 			filters:       []string{"mntns\t0"},
-			expectedError: filters.InvalidExpression("mntns\t0"),
+			expectedError: flags.InvalidFilterOptionError("mntns\t0"),
 		},
 		{
 			testName:      "invalid filter type",
@@ -176,6 +176,18 @@ func TestPrepareFilterScope(t *testing.T) {
 			filters:  []string{"comm=ls"},
 		},
 		{
+			testName: "success - binary=host:/usr/bin/ls",
+			filters:  []string{"binary=host:/usr/bin/ls"},
+		},
+		{
+			testName: "success - binary=/usr/bin/ls",
+			filters:  []string{"binary=/usr/bin/ls"},
+		},
+		{
+			testName: "success - scope 2:binary=host:/usr/bin/ls",
+			filters:  []string{"2:binary=host:/usr/bin/ls"},
+		},
+		{
 			testName: "success - uts!=deadbeaf",
 			filters:  []string{"uts!=deadbeaf"},
 		},
@@ -197,32 +209,32 @@ func TestPrepareFilterScope(t *testing.T) {
 			filters:  []string{"container"},
 		},
 		{
-			testName: "container-2",
-			filters:  []string{"container-2"},
+			testName: "2:container",
+			filters:  []string{"2:container"},
 		},
 		{
 			testName: "container=new",
 			filters:  []string{"container=new"},
 		},
 		{
-			testName: "container-2=new",
-			filters:  []string{"container-2=new"},
+			testName: "2:container=new",
+			filters:  []string{"2:container=new"},
 		},
 		{
 			testName: "pid=new",
 			filters:  []string{"pid=new"},
 		},
 		{
-			testName: "pid-2=new",
-			filters:  []string{"pid-2=new"},
+			testName: "2:pid=new",
+			filters:  []string{"2:pid=new"},
 		},
 		{
 			testName: "container=abcd123",
 			filters:  []string{"container=abcd123"},
 		},
 		{
-			testName: "container-2=abcd123",
-			filters:  []string{"container-2=abcd123"},
+			testName: "2:container=abcd123",
+			filters:  []string{"2:container=abcd123"},
 		},
 		{
 			testName: "argfilter",

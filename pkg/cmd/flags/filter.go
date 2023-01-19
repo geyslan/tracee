@@ -120,22 +120,43 @@ func parseFilterFlag(flag string) (*filterFlag, error) {
 		filterName        string
 		operatorAndValues string
 
-		scopeEndIdx   int // stores ':' flag index (end of the scope value)
-		filterNameIdx int
-		operatorIdx   int
-		err           error
+		scopeEndIdx      int // stores ':' flag index (end of the scope value)
+		filterNameIdx    int
+		filterNameEndIdx int
+		operatorIdx      int
+		err              error
 	)
 
-	// parse scope
 	scopeEndIdx = strings.Index(flag, ":")
-	if scopeEndIdx == -1 {
-		// consider it as first scope index
-		scopeID = 0
-	} else {
-		if scopeEndIdx+1 >= len(flag) {
-			return nil, filters.InvalidScope(flag)
-		}
+	operatorIdx = strings.IndexAny(flag, "=!<>")
 
+	if scopeEndIdx == -1 && operatorIdx == -1 {
+		return &filterFlag{
+			full:              flag,
+			filterName:        flag,
+			operatorAndValues: "",
+			scopeIdx:          scopeID,
+		}, nil
+	}
+
+	if operatorIdx != -1 {
+		operatorAndValues = flag[operatorIdx:]
+		filterNameEndIdx = operatorIdx
+	} else {
+		operatorIdx = len(flag) - 1
+		filterNameEndIdx = len(flag)
+	}
+
+	// check operators
+	if len(operatorAndValues) == 1 ||
+		operatorAndValues == "!=" ||
+		operatorAndValues == "<=" ||
+		operatorAndValues == ">=" {
+
+		return nil, filters.InvalidExpression(flag)
+	}
+
+	if scopeEndIdx != -1 && scopeEndIdx < operatorIdx {
 		// parse its ID
 		scopeID, err = strconv.Atoi(flag[:scopeEndIdx])
 		if err != nil {
@@ -151,39 +172,27 @@ func parseFilterFlag(flag string) (*filterFlag, error) {
 		filterNameIdx = scopeEndIdx + 1
 	}
 
-	// parse filters with no expression (it can have ! operator)
-	operatorIdx = strings.IndexAny(flag, "=<>")
-	filterName = flag[filterNameIdx:]
-	if operatorIdx == -1 &&
-		strings.HasSuffix(filterName, "follow") ||
-		strings.HasSuffix(filterName, "container") {
+	if len(operatorAndValues) >= 2 &&
+		operatorAndValues[0:1] == "!" &&
+		operatorAndValues[1:2] != "=" {
 
-		return &filterFlag{
-			full:              flag,
-			filterName:        filterName,
-			operatorAndValues: "",
-			scopeIdx:          scopeID,
-		}, nil
-	}
+		filterName = flag[filterNameIdx:]
+		if strings.HasSuffix(filterName, "follow") ||
+			strings.HasSuffix(filterName, "container") {
 
-	// parse operator
-	operatorIdx = strings.IndexAny(flag, "=!<>")
-	if operatorIdx == -1 {
+			return &filterFlag{
+				full:              flag,
+				filterName:        filterName,
+				operatorAndValues: "",
+				scopeIdx:          scopeID,
+			}, nil
+		}
+
 		return nil, filters.InvalidExpression(flag)
 	}
 
 	// parse filter name
-	filterName = flag[filterNameIdx:operatorIdx]
-
-	// parse operator and values
-	operatorAndValues = flag[operatorIdx:]
-	if len(operatorAndValues) == 1 ||
-		operatorAndValues == "!=" ||
-		operatorAndValues == "<=" ||
-		operatorAndValues == ">=" {
-
-		return nil, filters.InvalidExpression(flag)
-	}
+	filterName = flag[filterNameIdx:filterNameEndIdx]
 
 	return &filterFlag{
 		full:              flag,
