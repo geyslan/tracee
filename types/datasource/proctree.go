@@ -1,6 +1,7 @@
 package datasource
 
 import (
+	"strconv"
 	"time"
 )
 
@@ -59,6 +60,16 @@ type FileInfo struct {
 // known in the tree.
 // The lineage is only relevant for the container the process resides in.
 type ProcessLineage []TimeRelevantInfo[ProcessInfo]
+
+// ToMap is the way to implement the detect.FindingDataStruct interface
+func (pl ProcessLineage) ToMap() map[string]interface{} {
+	lmap := make(map[string]interface{}, len(pl))
+	for i, ti := range pl {
+		lmap[strconv.Itoa(i)] = ti
+	}
+
+	return lmap
+}
 
 // ProcKey is a key to the process tree data source, which will result receiving ProcessInfo in the
 // response for the matching process in the given time.
