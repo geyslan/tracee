@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"math/big"
 	"strconv"
 	"sync"
+	stdtime "time"
 	"unsafe"
 
 	"github.com/aquasecurity/tracee/pkg/bufferdecoder"
@@ -80,6 +82,56 @@ func (t *Tracee) handleEvents(ctx context.Context, initialized chan<- struct{}) 
 
 	errc = t.sinkEvents(ctx, eventsChan)
 	errcList = append(errcList, errc)
+
+	// Fetch events counts from the ebpf side which were attempted to be sent
+	// to the userland and not just the ones that were actually arrived.
+	go func() {
+		evtsCountsBPFMap, err := t.bpfModule.GetMap("event_counts")
+		if err != nil {
+			logger.Errorw("[gg] Failed to get event_counts map", "error", err)
+			return
+		}
+
+		for _, id := range t.policyManager.EventsSelected() {
+			key := uint32(id)
+			value := uint64(0)
+			err := evtsCountsBPFMap.Update(unsafe.Pointer(&key), unsafe.Pointer(&value))
+			if err != nil {
+				logger.Errorw("[gg] Failed to update event_counts map", "error", err)
+			}
+		}
+
+		evtsCounts := make(map[uint32]uint64)
+		ticker := stdtime.NewTicker(5 * stdtime.Second)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				iter := evtsCountsBPFMap.Iterator()
+				for iter.Next() {
+					key := binary.LittleEndian.Uint32(iter.Key())
+					value, err := evtsCountsBPFMap.GetValue(unsafe.Pointer(&key))
+					if err != nil {
+						logger.Errorw("[gg] Failed to get value from event_counts map", "error", err)
+						continue
+					}
+					evtsCounts[key] = binary.LittleEndian.Uint64(value)
+				}
+
+				total := big.NewInt(0)
+				for k, v := range evtsCounts {
+					if v == 0 {
+						continue
+					}
+					evtName := events.Core.GetDefinitionByID(events.ID(k)).GetName()
+					logger.Infow("[gg] Event count", "event_id", k, "event_name", evtName, "count", v)
+					total.Add(total, big.NewInt(int64(v)))
+				}
+				logger.Infow("[gg] Total attempted submitted events", "count", total)
+			}
+		}
+	}()
 
 	initialized <- struct{}{}
 
