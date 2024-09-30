@@ -5381,6 +5381,31 @@ CGROUP_SKB_HANDLE_FUNCTION(proto_icmpv6);
 
 #define CGROUP_SKB_HANDLE(name) cgroup_skb_handle_##name(ctx, neteventctx, nethdrs);
 
+// struct bpf_dynptr {
+// 	__u64 __opaque[2];
+// } __attribute__((aligned(8)));
+
+struct bpf_dynptr {
+	void *data;
+	/* Size represents the number of usable bytes of dynptr data.
+	 * If for example the offset is at 4 for a local dynptr whose data is
+	 * of type u64, the number of usable bytes is 4.
+	 *
+	 * The upper 8 bits are reserved. It is as follows:
+	 * Bits 0 - 23 = size
+	 * Bits 24 - 30 = dynptr type
+	 * Bit 31 = whether dynptr is read-only
+	 */
+	u32 size;
+	u32 offset;
+} __attribute__((aligned(8)));
+
+extern int bpf_dynptr_from_skb(struct __sk_buff *skb, __u64 flags,
+    struct bpf_dynptr *ptr__uninit) __ksym __weak;
+extern __u32 bpf_dynptr_size(const struct bpf_dynptr *ptr) __ksym __weak;
+extern void *bpf_dynptr_slice(const struct bpf_dynptr *ptr, __u32 offset,
+			      void *buffer, __u32 buffer__szk) __ksym __weak;
+
 //
 // Network submission functions
 //
@@ -5412,11 +5437,53 @@ statfunc u32 cgroup_skb_submit(void *map, struct __sk_buff *ctx,
     neteventctx->eventctx.eventid = event_type;
 
     // Submit the event.
-    return bpf_perf_event_output(ctx, map, flags, neteventctx, sizeof_net_event_context_t());
+    if (map == &events_ringbuf) {
+        struct bpf_dynptr net_evt_ctx;
+        // struct bpf_dynptr payload;
+        u32 max_size = sizeof_net_event_context_t() + size;
+
+        if (bpf_ringbuf_reserve_dynptr(map, max_size, 0, &net_evt_ctx)) {
+            bpf_ringbuf_discard_dynptr(&net_evt_ctx, 0);
+            return 0;
+        }
+        bpf_printk("ringbuf reserved %d", bpf_dynptr_size(&net_evt_ctx));
+
+        if (bpf_dynptr_write(&net_evt_ctx, 0, neteventctx, sizeof_net_event_context_t(), 0)) {
+            bpf_ringbuf_discard_dynptr(&net_evt_ctx, 0);
+            return 0;
+        }
+        bpf_printk("neteventctx written");
+
+        // bpf_dynptr_from_mem(&size, sizeof(size), 0, &net_evt_ctx);
+
+        void *payload = bpf_dynptr_data(&net_evt_ctx, sizeof_net_event_context_t(), 84);
+        if (!payload) {
+            bpf_ringbuf_discard_dynptr(&net_evt_ctx, 0);
+            return 0;
+        }
+
+        // s32 sz = size;
+        // if (sz <= 0) {
+        //     bpf_ringbuf_discard_dynptr(&net_evt_ctx, 0);
+        //     return 0;
+        // }
+        if (bpf_skb_load_bytes(ctx, 0, payload, 84)) {
+            bpf_ringbuf_discard_dynptr(&net_evt_ctx, 0);
+            return 0;
+        }
+        bpf_printk("payload written");
+
+        bpf_printk("submitting event to ringbuf");
+        bpf_ringbuf_submit_dynptr(&net_evt_ctx, 0);
+        return 0;
+    }
+
+    // return bpf_perf_event_output(ctx, map, flags, neteventctx, sizeof_net_event_context_t());
+    return 0;
 }
 
 // Submit a network event.
-#define cgroup_skb_submit_event(a, b, c, d) cgroup_skb_submit(&events, a, b, c, d)
+#define cgroup_skb_submit_event(a, b, c, d) cgroup_skb_submit(&events_ringbuf, a, b, c, d)
 
 // Check if a flag is set in the retval.
 #define retval_hasflag(flag) (neteventctx->eventctx.retval & flag) == flag
@@ -5524,7 +5591,8 @@ statfunc u32 cgroup_skb_submit_flow(struct __sk_buff *ctx,
     };
 
     // Submit the flow base event so userland can derive the flow events.
-    cgroup_skb_submit(&events, ctx, neteventctx, event_type, size);
+    // cgroup_skb_submit(&events_ringbuf, ctx, neteventctx, event_type, size);
+    cgroup_skb_submit(&events_ringbuf, ctx, neteventctx, event_type, size);
 
     return 0;
 };

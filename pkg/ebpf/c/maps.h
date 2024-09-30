@@ -635,6 +635,13 @@ struct events {
 
 typedef struct events events_t;
 
+struct events_ringbuf {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, (1 << 22)); // 4M
+} events_ringbuf SEC(".maps");
+
+typedef struct events_ringbuf events_ringbuf_t;
+
 // file writes events submission
 struct file_writes {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);

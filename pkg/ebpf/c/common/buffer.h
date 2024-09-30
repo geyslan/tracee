@@ -484,7 +484,8 @@ statfunc int events_perf_submit(program_data_t *p, long ret)
                  :
                  : [size] "r"(size), [max_size] "i"(MAX_EVENT_SIZE));
 
-    return bpf_perf_event_output(p->ctx, &events, BPF_F_CURRENT_CPU, p->event, size);
+    // return bpf_perf_event_output(p->ctx, &events, BPF_F_CURRENT_CPU, p->event, size);
+    return bpf_ringbuf_output(&events_ringbuf, p->event, size, 0);
 }
 
 statfunc int signal_perf_submit(void *ctx, controlplane_signal_t *sig)

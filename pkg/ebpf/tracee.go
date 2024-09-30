@@ -87,10 +87,12 @@ type Tracee struct {
 	StackAddressesMap *bpf.BPFMap
 	FDArgPathMap      *bpf.BPFMap
 	// Perf Buffers
-	eventsPerfMap  *bpf.PerfBuffer // perf buffer for events
+	// eventsPerfMap  *bpf.PerfBuffer // perf buffer for events
 	fileWrPerfMap  *bpf.PerfBuffer // perf buffer for file writes
 	netCapPerfMap  *bpf.PerfBuffer // perf buffer for network captures
 	bpfLogsPerfMap *bpf.PerfBuffer // perf buffer for bpf logs
+	// Ring Buffers
+	eventsRingBuffer *bpf.RingBuffer // ring buffer for events
 	// Events Channels
 	eventsChannel       chan []byte // channel for events
 	fileCapturesChannel chan []byte // channel for file writes
@@ -1286,17 +1288,21 @@ func (t *Tracee) initBPF() error {
 
 	t.eventsChannel = make(chan []byte, 1000)
 	t.lostEvChannel = make(chan uint64)
-	if t.config.PerfBufferSize < 1 {
-		return errfmt.Errorf("invalid perf buffer size: %d", t.config.PerfBufferSize)
-	}
-	t.eventsPerfMap, err = t.bpfModule.InitPerfBuf(
-		"events",
-		t.eventsChannel,
-		t.lostEvChannel,
-		t.config.PerfBufferSize,
-	)
+	// if t.config.PerfBufferSize < 1 {
+	// 	return errfmt.Errorf("invalid perf buffer size: %d", t.config.PerfBufferSize)
+	// }
+	// t.eventsPerfMap, err = t.bpfModule.InitPerfBuf(
+	// 	"events",
+	// 	t.eventsChannel,
+	// 	t.lostEvChannel,
+	// 	t.config.PerfBufferSize,
+	// )
+	// if err != nil {
+	// 	return errfmt.Errorf("error initializing events perf map: %v", err)
+	// }
+	t.eventsRingBuffer, err = t.bpfModule.InitRingBuf("events_ringbuf", t.eventsChannel)
 	if err != nil {
-		return errfmt.Errorf("error initializing events perf map: %v", err)
+		return errfmt.Errorf("error initializing events ring buffer: %v", err)
 	}
 
 	if t.config.BlobPerfBufferSize > 0 {
@@ -1372,7 +1378,8 @@ func (t *Tracee) Run(ctx gocontext.Context) error {
 
 	// Main event loop (polling events perf buffer)
 
-	t.eventsPerfMap.Poll(pollTimeout)
+	// t.eventsPerfMap.Poll(pollTimeout)
+	t.eventsRingBuffer.Poll(pollTimeout)
 
 	pipelineReady := make(chan struct{}, 1)
 	go t.processLostEvents() // termination signaled by closing t.done
@@ -1406,7 +1413,8 @@ func (t *Tracee) Run(ctx gocontext.Context) error {
 
 	// Close perf buffers
 
-	t.eventsPerfMap.Close()
+	t.eventsRingBuffer.Close()
+	// t.eventsPerfMap.Close()
 	if t.config.BlobPerfBufferSize > 0 {
 		t.fileWrPerfMap.Close()
 	}
