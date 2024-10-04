@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/aquasecurity/tracee/pkg/errfmt"
+	"github.com/aquasecurity/tracee/pkg/events/parse"
 	"github.com/aquasecurity/tracee/pkg/logger"
 )
 
@@ -123,6 +124,9 @@ func (d *DefinitionGroup) AddBatch(givenDefs map[ID]Definition) error {
 	defer d.mutex.Unlock()
 
 	for id, def := range givenDefs {
+		for i := range def.params {
+			def.params[i].Zero = parse.ArgZeroValueFromCType(def.params[i].Type)
+		}
 		err := d.add(id, def)
 		if err != nil {
 			return err

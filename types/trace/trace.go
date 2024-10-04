@@ -136,8 +136,9 @@ type Argument struct {
 
 // ArgMeta describes an argument
 type ArgMeta struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Name string      `json:"name"`
+	Type string      `json:"type"`
+	Zero interface{} `json:"-"` // Zero value of the argument
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
