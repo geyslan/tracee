@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	ch "github.com/aquasecurity/tracee/pkg/changelog"
+	"github.com/aquasecurity/tracee/pkg/changelog"
 	traceetime "github.com/aquasecurity/tracee/pkg/time"
 )
 
@@ -27,38 +27,58 @@ type TaskInfoFeed struct {
 // Task Info
 //
 
+const (
+	// string members
+	taskInfoName changelog.MemberKind = iota
+)
+
+const (
+	// int members
+	taskInfoPPid changelog.MemberKind = iota
+	taskInfoNsPPid
+	taskInfoUid
+	taskInfoGid
+)
+
+var (
+	// taskInfoMutableStringsFlags is a slice with metadata about the mutable string members of a TaskInfo.
+	taskInfoMutableStringsFlags = []changelog.MaxEntries{
+		taskInfoName: 3, // process name can be changed
+	}
+
+	// taskInfoMutableIntsFlags is a slice with metadata about the mutable int members of a TaskInfo.
+	taskInfoMutableIntsFlags = []changelog.MaxEntries{
+		taskInfoPPid:   2, // process can be reparented
+		taskInfoNsPPid: 2, // process can be reparented
+		taskInfoUid:    2, // process uid can be changed
+		taskInfoGid:    2, // process gid can be changed
+	}
+)
+
 // TaskInfo represents a task.
 type TaskInfo struct {
-	name        *ch.Changelog[string] // variable (process name can be changed)
-	tid         int                   // immutable
-	pid         int                   // immutable
-	pPid        *ch.Changelog[int]    // variable (process can be reparented)
-	nsTid       int                   // immutable
-	nsPid       int                   // immutable
-	nsPPid      *ch.Changelog[int]    // variable (process can be reparented)
-	uid         *ch.Changelog[int]    // variable (process uid can be changed)
-	gid         *ch.Changelog[int]    // variable (process gid can be changed)
-	startTimeNS uint64                // this is a duration, in ns, since boot (immutable)
-	exitTimeNS  uint64                // this is a duration, in ns, since boot (immutable)
-	mutex       *sync.RWMutex
+	tid            int                        // immutable
+	pid            int                        // immutable
+	nsTid          int                        // immutable
+	nsPid          int                        // immutable
+	startTimeNS    uint64                     // this is a duration, in ns, since boot (immutable)
+	exitTimeNS     uint64                     // this is a duration, in ns, since boot (immutable)
+	mutableStrings *changelog.Entries[string] // string mutable fields
+	mutableInts    *changelog.Entries[int]    // int mutable fields
+	mutex          *sync.RWMutex
 }
 
 // NewTaskInfo creates a new task.
 func NewTaskInfo() *TaskInfo {
 	return &TaskInfo{
-		name: ch.NewChangelog[string](5),
-		// All the folloowing values changes are currently not monitored by the process tree.
-		// Hence, for now, they will only contain one value in the changelog
-		pPid:   ch.NewChangelog[int](1),
-		nsPPid: ch.NewChangelog[int](1),
-		uid:    ch.NewChangelog[int](1),
-		gid:    ch.NewChangelog[int](1),
-		mutex:  &sync.RWMutex{},
+		mutableStrings: changelog.NewEntries[string](taskInfoMutableStringsFlags),
+		mutableInts:    changelog.NewEntries[int](taskInfoMutableIntsFlags),
+		mutex:          &sync.RWMutex{},
 	}
 }
 
 // NewTaskInfoFromFeed creates a new task with values from the given feed.
-func NewTaskInfoFromFeed(feed TaskInfoFeed) *TaskInfo {
+func NewTaskInfoNewFromFeed(feed TaskInfoFeed) *TaskInfo {
 	new := NewTaskInfo()
 	new.SetFeed(feed)
 	return new
@@ -70,6 +90,7 @@ func NewTaskInfoFromFeed(feed TaskInfoFeed) *TaskInfo {
 func (ti *TaskInfo) SetFeed(feed TaskInfoFeed) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
+
 	ti.setFeedAt(feed, time.Now()) // set current values
 }
 
@@ -77,12 +98,13 @@ func (ti *TaskInfo) SetFeed(feed TaskInfoFeed) {
 func (ti *TaskInfo) SetFeedAt(feed TaskInfoFeed, targetTime time.Time) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
+
 	ti.setFeedAt(feed, targetTime) // set values at the given time
 }
 
 func (ti *TaskInfo) setFeedAt(feed TaskInfoFeed, targetTime time.Time) {
 	if feed.Name != "" {
-		ti.name.Set(feed.Name, targetTime)
+		ti.mutableStrings.Set(taskInfoName, feed.Name, targetTime)
 	}
 	if feed.Tid >= 0 {
 		ti.tid = feed.Tid
@@ -91,7 +113,7 @@ func (ti *TaskInfo) setFeedAt(feed TaskInfoFeed, targetTime time.Time) {
 		ti.pid = feed.Pid
 	}
 	if feed.PPid >= 0 {
-		ti.pPid.Set(feed.PPid, targetTime)
+		ti.mutableInts.Set(taskInfoPPid, feed.PPid, targetTime)
 	}
 	if feed.NsTid >= 0 {
 		ti.nsTid = feed.NsTid
@@ -100,13 +122,13 @@ func (ti *TaskInfo) setFeedAt(feed TaskInfoFeed, targetTime time.Time) {
 		ti.nsPid = feed.NsPid
 	}
 	if feed.NsPid >= 0 {
-		ti.nsPPid.Set(feed.NsPid, targetTime)
+		ti.mutableInts.Set(taskInfoNsPPid, feed.NsPPid, targetTime)
 	}
 	if feed.Uid >= 0 {
-		ti.uid.Set(feed.Uid, targetTime)
+		ti.mutableInts.Set(taskInfoUid, feed.Uid, targetTime)
 	}
 	if feed.Gid >= 0 {
-		ti.gid.Set(feed.Gid, targetTime)
+		ti.mutableInts.Set(taskInfoGid, feed.Gid, targetTime)
 	}
 	if feed.StartTimeNS != 0 {
 		ti.startTimeNS = feed.StartTimeNS
@@ -120,6 +142,7 @@ func (ti *TaskInfo) setFeedAt(feed TaskInfoFeed, targetTime time.Time) {
 func (ti *TaskInfo) GetFeed() TaskInfoFeed {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
+
 	return ti.getFeedAt(time.Now()) // return current values
 }
 
@@ -127,20 +150,21 @@ func (ti *TaskInfo) GetFeed() TaskInfoFeed {
 func (ti *TaskInfo) GetFeedAt(targetTime time.Time) TaskInfoFeed {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
+
 	return ti.getFeedAt(targetTime) // return values at the given time
 }
 
 func (ti *TaskInfo) getFeedAt(targetTime time.Time) TaskInfoFeed {
 	return TaskInfoFeed{
-		Name:        ti.name.Get(targetTime),
+		Name:        ti.mutableStrings.Get(taskInfoName, targetTime),
 		Tid:         ti.tid,
 		Pid:         ti.pid,
-		PPid:        ti.pPid.Get(targetTime),
+		PPid:        ti.mutableInts.Get(taskInfoPPid, targetTime),
 		NsTid:       ti.nsTid,
 		NsPid:       ti.nsPid,
-		NsPPid:      ti.nsPPid.Get(targetTime),
-		Uid:         ti.uid.Get(targetTime),
-		Gid:         ti.gid.Get(targetTime),
+		NsPPid:      ti.mutableInts.Get(taskInfoNsPPid, targetTime),
+		Uid:         ti.mutableInts.Get(taskInfoUid, targetTime),
+		Gid:         ti.mutableInts.Get(taskInfoGid, targetTime),
 		StartTimeNS: ti.startTimeNS,
 		ExitTimeNS:  ti.exitTimeNS,
 	}
@@ -152,20 +176,23 @@ func (ti *TaskInfo) getFeedAt(targetTime time.Time) TaskInfoFeed {
 func (ti *TaskInfo) SetName(name string) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
-	ti.name.Set(name, time.Now())
+
+	ti.mutableStrings.Set(taskInfoName, name, time.Now())
 }
 
 // SetNameAt sets the name of the task at the given time.
 func (ti *TaskInfo) SetNameAt(name string, targetTime time.Time) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
-	ti.name.Set(name, targetTime)
+
+	ti.mutableStrings.Set(taskInfoName, name, targetTime)
 }
 
 // SetTid sets the tid of the task.
 func (ti *TaskInfo) SetTid(tid int) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
+
 	ti.tid = tid
 }
 
@@ -173,6 +200,7 @@ func (ti *TaskInfo) SetTid(tid int) {
 func (ti *TaskInfo) SetPid(pid int) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
+
 	ti.pid = pid
 }
 
@@ -180,6 +208,7 @@ func (ti *TaskInfo) SetPid(pid int) {
 func (ti *TaskInfo) SetNsTid(nsTid int) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
+
 	ti.nsTid = nsTid
 }
 
@@ -187,6 +216,7 @@ func (ti *TaskInfo) SetNsTid(nsTid int) {
 func (ti *TaskInfo) SetNsPid(nsPid int) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
+
 	ti.nsPid = nsPid
 }
 
@@ -194,6 +224,7 @@ func (ti *TaskInfo) SetNsPid(nsPid int) {
 func (ti *TaskInfo) SetStartTimeNS(startTimeNS uint64) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
+
 	ti.startTimeNS = startTimeNS
 }
 
@@ -201,6 +232,7 @@ func (ti *TaskInfo) SetStartTimeNS(startTimeNS uint64) {
 func (ti *TaskInfo) SetExitTime(exitTime uint64) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
+
 	ti.exitTimeNS = exitTime
 }
 
@@ -208,56 +240,64 @@ func (ti *TaskInfo) SetExitTime(exitTime uint64) {
 func (ti *TaskInfo) SetPPid(pPid int) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
-	ti.pPid.Set(pPid, time.Now())
+
+	ti.mutableInts.Set(taskInfoPPid, pPid, time.Now())
 }
 
 // SetPPidAt sets the ppid of the task at the given time.
 func (ti *TaskInfo) SetPPidAt(pPid int, targetTime time.Time) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
-	ti.pPid.Set(pPid, targetTime)
+
+	ti.mutableInts.Set(taskInfoPPid, pPid, targetTime)
 }
 
 // SetNsPPid sets the nsppid of the task.
 func (ti *TaskInfo) SetNsPPid(nsPPid int) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
-	ti.nsPPid.Set(nsPPid, time.Now())
+
+	ti.mutableInts.Set(taskInfoNsPPid, nsPPid, time.Now())
 }
 
 // SetNsPPidAt sets the nsppid of the task at the given time.
 func (ti *TaskInfo) SetNsPPidAt(nsPPid int, targetTime time.Time) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
-	ti.nsPPid.Set(nsPPid, targetTime)
+
+	ti.mutableInts.Set(taskInfoNsPPid, nsPPid, targetTime)
 }
 
 // SetUid sets the uid of the task.
 func (ti *TaskInfo) SetUid(uid int) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
-	ti.uid.Set(uid, time.Now())
+
+	ti.mutableInts.Set(taskInfoUid, uid, time.Now())
 }
 
 // SetUidAt sets the uid of the task at the given time.
 func (ti *TaskInfo) SetUidAt(uid int, targetTime time.Time) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
-	ti.uid.Set(uid, targetTime)
+
+	ti.mutableInts.Set(taskInfoUid, uid, targetTime)
 }
 
 // SetGid sets the gid of the task.
 func (ti *TaskInfo) SetGid(gid int) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
-	ti.gid.Set(gid, time.Now())
+
+	ti.mutableInts.Set(taskInfoGid, gid, time.Now())
 }
 
 // SetGidAt sets the gid of the task at the given time.
 func (ti *TaskInfo) SetGidAt(gid int, targetTime time.Time) {
 	ti.mutex.Lock()
 	defer ti.mutex.Unlock()
-	ti.gid.Set(gid, targetTime)
+
+	ti.mutableInts.Set(taskInfoGid, gid, targetTime)
 }
 
 // Getters
@@ -266,20 +306,23 @@ func (ti *TaskInfo) SetGidAt(gid int, targetTime time.Time) {
 func (ti *TaskInfo) GetName() string {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
-	return ti.name.GetCurrent()
+
+	return ti.mutableStrings.GetCurrent(taskInfoName)
 }
 
 // GetNameAt returns the name of the task at the given time.
 func (ti *TaskInfo) GetNameAt(targetTime time.Time) string {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
-	return ti.name.Get(targetTime)
+
+	return ti.mutableStrings.Get(taskInfoName, targetTime)
 }
 
 // GetTid returns the tid of the task.
 func (ti *TaskInfo) GetTid() int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
+
 	return ti.tid
 }
 
@@ -287,6 +330,7 @@ func (ti *TaskInfo) GetTid() int {
 func (ti *TaskInfo) GetPid() int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
+
 	return ti.pid
 }
 
@@ -294,6 +338,7 @@ func (ti *TaskInfo) GetPid() int {
 func (ti *TaskInfo) GetNsTid() int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
+
 	return ti.nsTid
 }
 
@@ -301,6 +346,7 @@ func (ti *TaskInfo) GetNsTid() int {
 func (ti *TaskInfo) GetNsPid() int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
+
 	return ti.nsPid
 }
 
@@ -308,62 +354,71 @@ func (ti *TaskInfo) GetNsPid() int {
 func (ti *TaskInfo) GetPPid() int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
-	return ti.pPid.GetCurrent()
+
+	return ti.mutableInts.GetCurrent(taskInfoPPid)
 }
 
 // GetPPidAt returns the ppid of the task at the given time.
 func (ti *TaskInfo) GetPPidAt(targetTime time.Time) int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
-	return ti.pPid.Get(targetTime)
+
+	return ti.mutableInts.Get(taskInfoPPid, targetTime)
 }
 
 // GetNsPPid returns the nsPPid of the task.
 func (ti *TaskInfo) GetNsPPid() int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
-	return ti.nsPPid.GetCurrent()
+
+	return ti.mutableInts.GetCurrent(taskInfoNsPPid)
 }
 
 // GetNsPPidAt returns the nsPPid of the task at the given time.
 func (ti *TaskInfo) GetNsPPidAt(targetTime time.Time) int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
-	return ti.nsPPid.Get(targetTime)
+
+	return ti.mutableInts.Get(taskInfoNsPPid, targetTime)
 }
 
 // GetUid returns the uid of the task.
 func (ti *TaskInfo) GetUid() int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
-	return ti.uid.GetCurrent()
+
+	return ti.mutableInts.GetCurrent(taskInfoUid)
 }
 
 // GetUidAt returns the uid of the task at the given time.
 func (ti *TaskInfo) GetUidAt(targetTime time.Time) int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
-	return ti.uid.Get(targetTime)
+
+	return ti.mutableInts.Get(taskInfoUid, targetTime)
 }
 
 // GetGid returns the gid of the task.
 func (ti *TaskInfo) GetGid() int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
-	return ti.gid.GetCurrent()
+
+	return ti.mutableInts.GetCurrent(taskInfoGid)
 }
 
 // GetGidAt returns the gid of the task at the given time.
 func (ti *TaskInfo) GetGidAt(targetTime time.Time) int {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
-	return ti.gid.Get(targetTime)
+
+	return ti.mutableInts.Get(taskInfoGid, targetTime)
 }
 
 // GetStartTimeNS returns the start time of the task in nanoseconds since epoch
 func (ti *TaskInfo) GetStartTimeNS() uint64 {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
+
 	return ti.startTimeNS
 }
 
@@ -379,6 +434,7 @@ func (ti *TaskInfo) GetStartTime() time.Time {
 func (ti *TaskInfo) GetExitTimeNS() uint64 {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
+
 	return ti.exitTimeNS
 }
 
@@ -386,6 +442,7 @@ func (ti *TaskInfo) GetExitTimeNS() uint64 {
 func (ti *TaskInfo) GetExitTime() time.Time {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
+
 	return traceetime.NsSinceEpochToTime(ti.exitTimeNS)
 }
 
@@ -393,6 +450,7 @@ func (ti *TaskInfo) GetExitTime() time.Time {
 func (ti *TaskInfo) IsAlive() bool {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
+
 	return ti.exitTimeNS == 0
 }
 
@@ -401,6 +459,7 @@ func (ti *TaskInfo) IsAlive() bool {
 func (ti *TaskInfo) IsAliveAt(targetTime time.Time) bool {
 	ti.mutex.RLock()
 	defer ti.mutex.RUnlock()
+
 	if ti.exitTimeNS != 0 {
 		if targetTime.After(traceetime.NsSinceEpochToTime(ti.exitTimeNS)) {
 			return false
@@ -411,5 +470,6 @@ func (ti *TaskInfo) IsAliveAt(targetTime time.Time) bool {
 	if targetTime.Before(traceetime.NsSinceEpochToTime(ti.startTimeNS)) {
 		return false
 	}
+
 	return true
 }
