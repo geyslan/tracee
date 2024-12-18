@@ -118,16 +118,16 @@ $(OUTPUT_DIR):
 	$(CMD_MKDIR) -p $@
 
 #
-# Create a release snapshot
+# Create official release
 #
 
-SNAPSHOT_VERSION = $(shell git describe --tags --abbrev=0)
-IMAGE_TAG = $(subst v,,$(SNAPSHOT_VERSION))
+RELEASE_VERSION = $(shell $(CMD_GIT) describe --tags --abbrev=0)
+DOCKER_TAG = $(subst v,,$(RELEASE_VERSION))
 
-ifeq ("$(SNAPSHOT)", "1")
-	SNAPSHOT_VERSION = $(shell  git rev-parse --short HEAD)
-	IMAGE_TAG = $(SNAPSHOT_VERSION)
-endif
+# ifeq ("$(SNAPSHOT)", "1")
+# 	RELEASE_VERSION = $(shell $(CMD_GIT) rev-parse --short HEAD)
+# 	DOCKER_TAG = $(RELEASE_VERSION)
+# endif
 
 RELEASE_FILES = LICENSE
 RELEASE_FILES += $(OUTPUT_DIR)/tracee-ebpf
@@ -139,15 +139,18 @@ RELEASE_FILES += $(OUTPUT_DIR)/signatures
 #RELEASE_FILES += $(OUTPUT_DIR)/tracee.bpf.o
 RELEASE_FILES += $(OUTPUT_DIR)/docs/man/ # docs path is hardcoded in tracee
 
-OUT_ARCHIVE := $(OUTPUT_DIR)/tracee-$(ARCH).$(SNAPSHOT_VERSION).tar.gz
-OUT_CHECKSUMS := $(OUTPUT_DIR)/checksum-$(ARCH).$(SNAPSHOT_VERSION).txt
+OUT_ARCHIVE := $(OUTPUT_DIR)/tracee-$(ARCH).$(RELEASE_VERSION).tar.gz
+OUT_CHECKSUMS := $(OUTPUT_DIR)/checksum-$(ARCH).$(RELEASE_VERSION).txt
 
 PUSH_DOCKER_REPO ?= aquasec/tracee
+
+release: override BTFHUB=1
+release: override SNAPSHOT=0
 
 .PHONY: release
 release: \
 	$(OUTPUT_DIR) \
-	build-tracee-btfhub \
+	build-tracee-container \
 	build-tracee-binary-static \
 	build-tracee-binary-shared \
 	copy-man \
@@ -158,41 +161,30 @@ release: \
 	.check_$(CMD_CHECKSUM) \
 	.check_$(CMD_GITHUB)
 
-#
-# release rule recipes
-#
-ifneq ("$(SNAPSHOT)", "1")
-#
-# official release
-#
-
 # if not released yet, create a github release without artifacts.
 # be aware that if changes are made to the release branch, the github release
 # must be deleted so the next triggered action can recreate it updated.
-# note: docker TAGS created by release workflows (not here).
-	@( \
-		$(CMD_GITHUB) release view $(SNAPSHOT_VERSION) > /dev/null 2>&1 && \
-		echo "Release $(SNAPSHOT_VERSION) already exists" \
-	) || \
-	( \
-		echo "Creating release $(SNAPSHOT_VERSION)" && \
-		echo '## Docker Image' > $(RELEASE_NOTES) && \
-		echo '- `docker pull docker.io/$(PUSH_DOCKER_REPO):$(IMAGE_TAG)`' >> $(RELEASE_NOTES) && \
-		echo '  ' >> $(RELEASE_NOTES) && \
-		echo '## Docker Images (per architecture)  ' >> $(RELEASE_NOTES) && \
-		echo '- `docker pull docker.io/$(PUSH_DOCKER_REPO):x86_64-$(IMAGE_TAG)`' >> $(RELEASE_NOTES) && \
-		echo '- `docker pull docker.io/$(PUSH_DOCKER_REPO):aarch64-$(IMAGE_TAG)`' >> $(RELEASE_NOTES) && \
-		$(CMD_GITHUB) release create $(SNAPSHOT_VERSION) --title $(SNAPSHOT_VERSION) --notes-file $(RELEASE_NOTES) \
-	)
+# note: docker TAGS $(DOCKER_TAG) created by release workflows (not here).
 
-# upload artifacts to release (clobbering existing with same name)
-	@echo "Uploading artifacts to release $(SNAPSHOT_VERSION)" && \
-		$(CMD_GITHUB) release upload --clobber $(SNAPSHOT_VERSION) $(OUT_ARCHIVE) $(OUT_CHECKSUMS)
-endif
 
 
 #
-# build tracee
+# Create snapshot release
+#
+
+release-snapshot: override BTFHUB=0
+release-snapshot: override SNAPSHOT=1
+release-snapshot: override RELEASE_VERSION=
+
+.PHONY: release-snapshot
+release-snapshot: \
+	$(OUTPUT_DIR) \
+	build-tracee-container \
+	| .check_tree
+
+
+#
+# build tracee container
 #
 
 .PHONY: alpine-prepare
@@ -200,10 +192,10 @@ alpine-prepare:
 	$(MAKE) -f builder/Makefile.tracee-make alpine-prepare && \
 		$(MAKE) -f builder/Makefile.tracee-make alpine-prepare ARG="clean"
 
-.PHONY: build-tracee-btfhub
-build-tracee-btfhub: alpine-prepare
-# build official container image (CO-RE + BTFHUB)
-	BTFHUB=1 SNAPSHOT=$(SNAPSHOT) $(MAKE) -f builder/Makefile.tracee-container build-tracee
+.PHONY: build-tracee-container
+build-tracee-container: alpine-prepare
+# build official container image
+	BTFHUB=$(BTFHUB) SNAPSHOT=$(SNAPSHOT) $(MAKE) -f builder/Makefile.tracee-container build-tracee
 
 #
 # build binaries (tracee, tracee-ebpf, tracee-rules, rules)
@@ -234,7 +226,7 @@ copy-man: \
 	$(CMD_CP) -r --parents docs/man $(OUTPUT_DIR)
 
 .PHONY: archive
-archive:
+archive: 
 # tarball
 	$(CMD_TAR) -cvzf $(OUT_ARCHIVE) $(RELEASE_FILES) && \
 		$(CMD_CHECKSUM) $(OUT_ARCHIVE) > $(OUT_CHECKSUMS)
