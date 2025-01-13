@@ -158,7 +158,6 @@ func (t *Tracee) queueEvents(ctx context.Context, in <-chan *trace.Event) (chan 
 func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-chan *trace.Event, <-chan error) {
 	out := make(chan *trace.Event, t.config.PipelineChannelSize)
 	errc := make(chan error, 1)
-	sysCompatTranslation := events.Core.IDs32ToIDs()
 	go func() {
 		defer close(out)
 		defer close(errc)
@@ -175,11 +174,12 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 				continue
 			}
 			eventId := events.ID(eCtx.EventID)
-			if !events.Core.IsDefined(eventId) {
+			eventDefinition := events.Core.GetDefinitionByID(eventId)
+			if eventDefinition.NotValid() {
 				t.handleError(errfmt.Errorf("failed to get configuration of event %d", eventId))
 				continue
 			}
-			eventDefinition := events.Core.GetDefinitionByID(eventId)
+
 			evtParams := eventDefinition.GetParams()
 			evtName := eventDefinition.GetName()
 			args := make([]trace.Argument, len(evtParams))
@@ -211,10 +211,17 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 			flags := parseContextFlags(containerData.ID, eCtx.Flags)
 			syscall := ""
 			if eCtx.Syscall != noSyscall {
-				var err error
-				syscall, err = parseSyscallID(int(eCtx.Syscall), flags.IsCompat, sysCompatTranslation)
-				if err != nil {
-					logger.Debugw("Originated syscall parsing", "error", err)
+				// The syscall ID returned from eBPF is actually the event ID representing that syscall.
+				// For 64-bit processes, the event ID is the same as the syscall ID.
+				// For 32-bit (compat) processes, the syscall ID gets translated in eBPF to the event ID of its
+				// 64-bit counterpart, or if it's a 32-bit exclusive syscall, to the event ID corresponding to it.
+				id := events.ID(eCtx.Syscall)
+				syscallDef := events.Core.GetDefinitionByID(id)
+				if syscallDef.NotValid() {
+					// This should never fail, as the translation used in eBPF relies on the same event definitions
+					logger.Errorw("No syscall event defined", "id", id)
+				} else {
+					syscall = syscallDef.GetName()
 				}
 			}
 

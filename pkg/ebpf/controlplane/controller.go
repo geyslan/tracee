@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/aquasecurity/libbpfgo"
@@ -26,6 +27,7 @@ type Controller struct {
 	lostSignalChan chan uint64
 	bpfModule      *libbpfgo.Module
 	signalBuffer   *libbpfgo.PerfBuffer
+	signalPool     *sync.Pool
 	cgroupManager  *containers.Containers
 	processTree    *proctree.ProcessTree
 	enrichDisabled bool
@@ -46,6 +48,11 @@ func NewController(
 		signalChan:     make(chan []byte, 100),
 		lostSignalChan: make(chan uint64),
 		bpfModule:      bpfModule,
+		signalPool: &sync.Pool{
+			New: func() interface{} {
+				return &signal{}
+			},
+		},
 		cgroupManager:  cgroupManager,
 		processTree:    procTree,
 		enrichDisabled: enrichDisabled,
@@ -73,16 +80,22 @@ func (ctrl *Controller) Run(ctx context.Context) {
 	for {
 		select {
 		case signalData := <-ctrl.signalChan:
-			signal := signal{}
+			signal := ctrl.getSignalFromPool()
+
+			// NOTE: override all the fields of the signal, to avoid any previous data.
 			err := signal.Unmarshal(signalData)
 			if err != nil {
 				logger.Errorw("error unmarshaling signal ebpf buffer", "error", err)
+				ctrl.putSignalInPool(signal)
 				continue
 			}
+
 			err = ctrl.processSignal(signal)
 			if err != nil {
 				logger.Errorw("error processing control plane signal", "error", err)
 			}
+
+			ctrl.putSignalInPool(signal)
 		case lost := <-ctrl.lostSignalChan:
 			logger.Warnw(fmt.Sprintf("Lost %d control plane signals", lost))
 		case <-ctrl.ctx.Done():
@@ -97,8 +110,10 @@ func (ctrl *Controller) Stop() error {
 	return nil
 }
 
+// Private
+
 // processSignal processes a signal from the control plane.
-func (ctrl *Controller) processSignal(signal signal) error {
+func (ctrl *Controller) processSignal(signal *signal) error {
 	switch signal.id {
 	case events.SignalCgroupMkdir:
 		return ctrl.processCgroupMkdir(signal.args)
@@ -115,7 +130,20 @@ func (ctrl *Controller) processSignal(signal signal) error {
 	return nil
 }
 
-// Private
+// getSignalFromPool gets a signal from the pool.
+// signal certainly contains old data, so it must be updated before use.
+func (ctrl *Controller) getSignalFromPool() *signal {
+	// revive:disable:unchecked-type-assertion
+	sig := ctrl.signalPool.Get().(*signal)
+	// revive:enable:unchecked-type-assertion
+
+	return sig
+}
+
+// putSignalInPool puts a signal back in the pool.
+func (ctrl *Controller) putSignalInPool(sig *signal) {
+	ctrl.signalPool.Put(sig)
+}
 
 // debug prints the process tree every 5 seconds (for debugging purposes).
 func (ctrl *Controller) debug(enable bool) {
