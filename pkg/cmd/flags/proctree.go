@@ -20,7 +20,8 @@ Example:
       both         | process tree is built from both events and signals.
   --proctree process-cache=8192   | will cache up to 8192 processes in the tree (LRU cache).
   --proctree thread-cache=4096    | will cache up to 4096 threads in the tree (LRU cache).
-  --proctree disable-procfs-query | Will disable procfs queries during runtime
+  --proctree disable-procfs       | will disable procfs entirely.
+  --proctree disable-procfs-query | will disable procfs quering during runtime.
 
 Use comma OR use the flag multiple times to choose multiple options:
   --proctree source=A,process-cache=B,thread-cache=C
@@ -93,7 +94,12 @@ func PrepareProcTree(cacheSlice []string) (proctree.ProcTreeConfig, error) {
 				cacheSet = true
 				continue
 			}
-			if strings.HasPrefix(value, "disable-procfs-query") {
+			if value == "disable-procfs" {
+				config.ProcfsInitialization = false
+				config.ProcfsQuerying = false
+				continue
+			}
+			if value == "disable-procfs-query" {
 				config.ProcfsQuerying = false
 				continue
 			}
