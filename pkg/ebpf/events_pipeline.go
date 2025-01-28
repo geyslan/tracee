@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"strconv"
 	"sync"
 	"unsafe"
@@ -218,10 +219,14 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 				id := events.ID(eCtx.Syscall)
 				syscallDef := events.Core.GetDefinitionByID(id)
 				if syscallDef.NotValid() {
-					// This should never fail, as the translation used in eBPF relies on the same event definitions
-					logger.Errorw("No syscall event defined", "id", id)
-				} else {
-					syscall = syscallDef.GetName()
+					commStr := string(eCtx.Comm[:bytes.IndexByte(eCtx.Comm[:], 0)])
+					utsNameStr := string(eCtx.UtsName[:bytes.IndexByte(eCtx.UtsName[:], 0)])
+					logger.Debugw(
+						fmt.Sprintf("Event %s with an invalid syscall id %d", evtName, id),
+						"Comm", commStr,
+						"UtsName", utsNameStr,
+						"EventContext", eCtx,
+					)
 				}
 			}
 
@@ -648,7 +653,7 @@ func (t *Tracee) getStackAddresses(stackID uint32) []uint64 {
 	var stackBytes []byte
 	err := capabilities.GetInstance().EBPF(func() error {
 		bytes, e := t.StackAddressesMap.GetValue(unsafe.Pointer(&stackID))
-		if e != nil {
+		if e == nil {
 			stackBytes = bytes
 		}
 		return e

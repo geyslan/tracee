@@ -1,9 +1,8 @@
 package proctree
 
 import (
-	"fmt"
+	"math"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -40,10 +39,10 @@ func (pt *ProcessTree) feedFromProcFSLoop() {
 }
 
 // FeedFromProcFSAsync feeds the process tree with data from procfs asynchronously.
-func (pt *ProcessTree) FeedFromProcFSAsync(givenPid int) {
+func (pt *ProcessTree) FeedFromProcFSAsync(givenPid int32) {
 	if pt.procfsChan == nil {
 		logger.Debugw("starting procfs proctree loop") // will tell if called more than once
-		pt.procfsChan = make(chan int, 1000)
+		pt.procfsChan = make(chan int32, 1000)
 		pt.feedFromProcFSLoop()
 	}
 	if pt.procfsOnce == nil {
@@ -62,7 +61,7 @@ func (pt *ProcessTree) FeedFromProcFSAsync(givenPid int) {
 }
 
 // FeedFromProcFS feeds the process tree with data from procfs.
-func (pt *ProcessTree) FeedFromProcFS(givenPid int) error {
+func (pt *ProcessTree) FeedFromProcFS(givenPid int32) error {
 	procDir := "/proc"
 
 	// If a PID is given, only deal with that process
@@ -80,7 +79,7 @@ func (pt *ProcessTree) FeedFromProcFS(givenPid int) error {
 		if !dir.IsDir() {
 			continue
 		}
-		pid, err := strconv.Atoi(dir.Name())
+		pid, err := proc.ParseInt32(dir.Name())
 		if err != nil {
 			continue
 		}
@@ -96,37 +95,47 @@ func (pt *ProcessTree) FeedFromProcFS(givenPid int) error {
 //
 
 // getProcessByPID returns a process by its PID.
-func getProcessByPID(pt *ProcessTree, givenPid int) (*Process, error) {
+func getProcessByPID(pt *ProcessTree, givenPid int32) (*Process, error) {
 	if givenPid <= 0 {
 		return nil, errfmt.Errorf("invalid PID")
 	}
-	status, err := proc.NewProcStatus(givenPid)
-	if err != nil {
-		return nil, errfmt.Errorf("%v", err)
-	}
-	stat, err := proc.NewProcStat(givenPid)
+
+	stat, err := proc.NewProcStatFields(
+		givenPid,
+		[]proc.StatField{
+			proc.StatStartTime,
+		},
+	)
 	if err != nil {
 		return nil, errfmt.Errorf("%v", err)
 	}
 
-	startTimeNs := traceetime.ClockTicksToNsSinceBootTime(stat.StartTime)
-	hash := utils.HashTaskID(uint32(status.GetPid()), startTimeNs) // status pid == tid
+	statStartTime := stat.GetStartTime()
+	startTimeNs := traceetime.ClockTicksToNsSinceBootTime(statStartTime)
+	hash := utils.HashTaskID(uint32(givenPid), startTimeNs) // status pid == tid
 
 	return pt.GetOrCreateProcessByHash(hash), nil
 }
 
 // dealWithProc deals with a process from procfs.
-func dealWithProc(pt *ProcessTree, givenPid int) error {
+func dealWithProc(pt *ProcessTree, givenPid int32) error {
 	if givenPid <= 0 {
 		return errfmt.Errorf("invalid PID")
 	}
+
+	stat, err := proc.NewProcStatFields(
+		givenPid,
+		[]proc.StatField{
+			proc.StatStartTime,
+		},
+	)
+	if err != nil {
+		return errfmt.WrapError(err)
+	}
+
 	status, err := proc.NewProcStatus(givenPid)
 	if err != nil {
-		return errfmt.Errorf("%v", err)
-	}
-	stat, err := proc.NewProcStat(givenPid)
-	if err != nil {
-		return errfmt.Errorf("%v", err)
+		return errfmt.WrapError(err)
 	}
 	if status.GetPid() != status.GetTgid() {
 		return errfmt.Errorf("invalid process") // sanity check (process, not thread)
@@ -139,7 +148,7 @@ func dealWithProc(pt *ProcessTree, givenPid int) error {
 	nspid := status.GetNsPid()
 	nstgid := status.GetNsTgid()
 	nsppid := status.GetNsPPid()
-	start := stat.StartTime
+	start := stat.GetStartTime()
 
 	// sanity checks
 	switch givenPid {
@@ -172,15 +181,15 @@ func dealWithProc(pt *ProcessTree, givenPid int) error {
 	// NOTE: override all the fields of the taskInfoFeed, to avoid any previous data.
 	taskInfoFeed := pt.GetTaskInfoFeedFromPool()
 
-	taskInfoFeed.Name = name     // command name (add "procfs+" to debug if needed)
-	taskInfoFeed.Tid = pid       // status: pid == tid
-	taskInfoFeed.Pid = tgid      // status: tgid == pid
-	taskInfoFeed.PPid = ppid     // status: ppid == ppid
-	taskInfoFeed.NsTid = nspid   // status: nspid == nspid
-	taskInfoFeed.NsPid = nstgid  // status: nstgid == nspid
-	taskInfoFeed.NsPPid = nsppid // status: nsppid == nsppid
-	taskInfoFeed.Uid = -1        // do not change the parent uid
-	taskInfoFeed.Gid = -1        // do not change the parent gid
+	taskInfoFeed.Name = name          // command name (add "procfs+" to debug if needed)
+	taskInfoFeed.Tid = pid            // status: pid == tid
+	taskInfoFeed.Pid = tgid           // status: tgid == pid
+	taskInfoFeed.PPid = ppid          // status: ppid == ppid
+	taskInfoFeed.NsTid = nspid        // status: nspid == nspid
+	taskInfoFeed.NsPid = nstgid       // status: nstgid == nspid
+	taskInfoFeed.NsPPid = nsppid      // status: nsppid == nsppid
+	taskInfoFeed.Uid = math.MaxUint32 // do not change the parent uid
+	taskInfoFeed.Gid = math.MaxUint32 // do not change the parent gid
 	taskInfoFeed.StartTimeNS = procfsTimeStamp
 	taskInfoFeed.ExitTimeNS = 0
 
@@ -197,25 +206,34 @@ func dealWithProc(pt *ProcessTree, givenPid int) error {
 	// update given process parent (if exists)
 	parent, err := getProcessByPID(pt, status.GetPPid())
 	if err == nil {
-		parent.AddChild(hash)
-		process.SetParentHash(parent.GetHash())
+		parentHash := parent.GetHash()
+		pt.AddChildToProcess(parentHash, hash)
+		process.SetParentHash(parentHash)
 	}
 
 	return nil
 }
 
 // dealWithThread deals with a thread from procfs.
-func dealWithThread(pt *ProcessTree, givenPid int, givenTid int) error {
+func dealWithThread(pt *ProcessTree, givenPid, givenTid int32) error {
 	if givenPid <= 0 {
 		return errfmt.Errorf("invalid PID")
 	}
+
+	stat, err := proc.NewThreadProcStatFields(
+		givenPid,
+		givenTid,
+		[]proc.StatField{
+			proc.StatStartTime,
+		},
+	)
+	if err != nil {
+		return errfmt.WrapError(err)
+	}
+
 	status, err := proc.NewThreadProcStatus(givenPid, givenTid)
 	if err != nil {
-		return errfmt.Errorf("%v", err)
-	}
-	stat, err := proc.NewThreadProcStat(givenPid, givenTid)
-	if err != nil {
-		return errfmt.Errorf("%v", err)
+		return errfmt.WrapError(err)
 	}
 
 	name := status.GetName()
@@ -225,7 +243,7 @@ func dealWithThread(pt *ProcessTree, givenPid int, givenTid int) error {
 	nspid := status.GetNsTgid()
 	nstgid := status.GetNsTgid()
 	nsppid := status.GetNsPPid()
-	start := stat.StartTime
+	start := stat.GetStartTime()
 
 	// sanity checks
 	if name == "" || pid == 0 || tgid == 0 || ppid == 0 {
@@ -250,15 +268,15 @@ func dealWithThread(pt *ProcessTree, givenPid int, givenTid int) error {
 	// NOTE: override all the fields of the taskInfoFeed, to avoid any previous data.
 	taskInfoFeed := pt.GetTaskInfoFeedFromPool()
 
-	taskInfoFeed.Name = name     // command name (add "procfs+" to debug if needed)
-	taskInfoFeed.Tid = pid       // status: pid == tid
-	taskInfoFeed.Pid = tgid      // status: tgid == pid
-	taskInfoFeed.PPid = ppid     // status: ppid == ppid
-	taskInfoFeed.NsTid = nspid   // status: nspid == nspid
-	taskInfoFeed.NsPid = nstgid  // status: nstgid == nspid
-	taskInfoFeed.NsPPid = nsppid // status: nsppid == nsppid
-	taskInfoFeed.Uid = -1        // do not change the parent uid
-	taskInfoFeed.Gid = -1        // do not change the parent gid
+	taskInfoFeed.Name = name          // command name (add "procfs+" to debug if needed)
+	taskInfoFeed.Tid = pid            // status: pid == tid
+	taskInfoFeed.Pid = tgid           // status: tgid == pid
+	taskInfoFeed.PPid = ppid          // status: ppid == ppid
+	taskInfoFeed.NsTid = nspid        // status: nspid == nspid
+	taskInfoFeed.NsPid = nstgid       // status: nstgid == nspid
+	taskInfoFeed.NsPPid = nsppid      // status: nsppid == nsppid
+	taskInfoFeed.Uid = math.MaxUint32 // do not change the parent uid
+	taskInfoFeed.Gid = math.MaxUint32 // do not change the parent gid
 	taskInfoFeed.StartTimeNS = procfsTimeStamp
 	taskInfoFeed.ExitTimeNS = 0
 
@@ -274,7 +292,7 @@ func dealWithThread(pt *ProcessTree, givenPid int, givenTid int) error {
 
 	leader, err := getProcessByPID(pt, tgid)
 	if err == nil {
-		leader.AddThread(hash) // threads associated with the leader (not parent)
+		pt.AddThreadToProcess(leader.GetHash(), hash) // threads associated with the leader (not parent)
 		leaderHash := leader.GetHash()
 		thread.SetLeaderHash(leaderHash) // same
 	}
@@ -290,39 +308,44 @@ func dealWithThread(pt *ProcessTree, givenPid int, givenTid int) error {
 }
 
 // dealWithProcFsEntry deals with a process from procfs.
-func dealWithProcFsEntry(pt *ProcessTree, givenPid int) error {
-	_, err := os.Stat(fmt.Sprintf("/proc/%v", givenPid))
-	if os.IsNotExist(err) {
-		return errfmt.Errorf("could not find process %v", givenPid)
-	}
-
-	err = dealWithProc(pt, givenPid) // run for the given process
+func dealWithProcFsEntry(pt *ProcessTree, givenPid int32) error {
+	err := dealWithProc(pt, givenPid) // run for the given process
 	if err != nil {
+		if os.IsNotExist(err) {
+			err = nil // ignore non-existent processes
+		}
 		if debugMsgs {
 			logger.Debugw("dealWithProc", "pid", givenPid, "err", err)
 		}
+
 		return err
 	}
 
-	taskPath := fmt.Sprintf("/proc/%v/task", givenPid)
+	taskPath := proc.GetTaskPath(givenPid)
 	taskDirs, err := os.ReadDir(taskPath)
 	if err != nil {
 		return err
 	}
+
 	for _, taskDir := range taskDirs {
 		if !taskDir.IsDir() {
 			continue
 		}
-		tid, err := strconv.Atoi(taskDir.Name())
+
+		tid, err := proc.ParseInt32(taskDir.Name())
 		if err != nil {
 			continue
 		}
 
 		err = dealWithThread(pt, givenPid, tid) // run for all threads of the given process
 		if err != nil {
+			if os.IsNotExist(err) {
+				err = nil // ignore non-existent threads
+			}
 			if debugMsgs {
 				logger.Debugw("dealWithThread", "pid", givenPid, "tid", tid, "err", err)
 			}
+
 			continue
 		}
 	}

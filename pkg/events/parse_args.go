@@ -226,6 +226,13 @@ func ParseArgs(event *trace.Event) error {
 				parseFsNotifyObjType(objTypeArg, uint64(objType))
 			}
 		}
+	case SuspiciousSyscallSource, StackPivot:
+		if vmaFlagsArg := GetArg(event, "vma_flags"); vmaFlagsArg != nil {
+			if flags, isUint64 := vmaFlagsArg.Value.(uint64); isUint64 {
+				vmaFlagsArg.Type = "string"
+				vmaFlagsArg.Value = parsers.ParseVmFlags(flags).String()
+			}
+		}
 	}
 
 	return nil

@@ -1,6 +1,7 @@
 package proctree
 
 import (
+	"math"
 	"path/filepath"
 	"time"
 
@@ -15,6 +16,9 @@ import (
 
 type ForkFeed struct {
 	TimeStamp       uint64
+	ParentStartTime uint64
+	LeaderStartTime uint64
+	ChildStartTime  uint64
 	ChildHash       uint32
 	ParentHash      uint32
 	LeaderHash      uint32
@@ -22,17 +26,15 @@ type ForkFeed struct {
 	ParentNsTid     int32
 	ParentPid       int32
 	ParentNsPid     int32
-	ParentStartTime uint64
 	LeaderTid       int32
 	LeaderNsTid     int32
 	LeaderPid       int32
 	LeaderNsPid     int32
-	LeaderStartTime uint64
 	ChildTid        int32
 	ChildNsTid      int32
 	ChildPid        int32
 	ChildNsPid      int32
-	ChildStartTime  uint64
+	_               [4]byte // padding
 }
 
 func (pt *ProcessTree) setParentFeed(
@@ -44,15 +46,15 @@ func (pt *ProcessTree) setParentFeed(
 	taskInfoFeed := pt.GetTaskInfoFeedFromPool()
 
 	taskInfoFeed.Name = "" // do not change the parent name
-	taskInfoFeed.Tid = int(forkFeed.ParentTid)
-	taskInfoFeed.Pid = int(forkFeed.ParentPid)
-	taskInfoFeed.NsTid = int(forkFeed.ParentNsTid)
-	taskInfoFeed.NsPid = int(forkFeed.ParentNsPid)
+	taskInfoFeed.Tid = forkFeed.ParentTid
+	taskInfoFeed.Pid = forkFeed.ParentPid
+	taskInfoFeed.NsTid = forkFeed.ParentNsTid
+	taskInfoFeed.NsPid = forkFeed.ParentNsPid
 	taskInfoFeed.StartTimeNS = forkFeed.ParentStartTime
-	taskInfoFeed.PPid = -1   // do not change the parent ppid
-	taskInfoFeed.NsPPid = -1 // do not change the parent nsppid
-	taskInfoFeed.Uid = -1    // do not change the parent uid
-	taskInfoFeed.Gid = -1    // do not change the parent gid
+	taskInfoFeed.PPid = -1            // do not change the parent ppid
+	taskInfoFeed.NsPPid = -1          // do not change the parent nsppid
+	taskInfoFeed.Uid = math.MaxUint32 // do not change the parent uid
+	taskInfoFeed.Gid = math.MaxUint32 // do not change the parent gid
 	taskInfoFeed.ExitTimeNS = 0
 
 	parent.GetInfo().SetFeedAt(taskInfoFeed, feedTimeStamp)
@@ -61,7 +63,7 @@ func (pt *ProcessTree) setParentFeed(
 	pt.PutTaskInfoFeedInPool(taskInfoFeed)
 
 	if pt.procfsQuery {
-		pt.FeedFromProcFSAsync(int(forkFeed.ParentPid)) // try to enrich ppid and name from procfs
+		pt.FeedFromProcFSAsync(forkFeed.ParentPid) // try to enrich ppid and name from procfs
 	}
 }
 
@@ -74,15 +76,15 @@ func (pt *ProcessTree) setLeaderFeed(
 	taskInfoFeed := pt.GetTaskInfoFeedFromPool()
 
 	taskInfoFeed.Name = parent.GetInfo().GetName()
-	taskInfoFeed.Tid = int(forkFeed.LeaderTid)
-	taskInfoFeed.Pid = int(forkFeed.LeaderPid)
-	taskInfoFeed.NsTid = int(forkFeed.LeaderNsTid)
-	taskInfoFeed.NsPid = int(forkFeed.LeaderNsPid)
+	taskInfoFeed.Tid = forkFeed.LeaderTid
+	taskInfoFeed.Pid = forkFeed.LeaderPid
+	taskInfoFeed.NsTid = forkFeed.LeaderNsTid
+	taskInfoFeed.NsPid = forkFeed.LeaderNsPid
 	taskInfoFeed.StartTimeNS = forkFeed.LeaderStartTime
-	taskInfoFeed.PPid = int(forkFeed.ParentPid)
-	taskInfoFeed.NsPPid = int(forkFeed.ParentNsPid)
-	taskInfoFeed.Uid = -1 // do not change the leader uid
-	taskInfoFeed.Gid = -1 // do not change the leader gid
+	taskInfoFeed.PPid = forkFeed.ParentPid
+	taskInfoFeed.NsPPid = forkFeed.ParentNsPid
+	taskInfoFeed.Uid = math.MaxUint32 // do not change the leader uid
+	taskInfoFeed.Gid = math.MaxUint32 // do not change the leader gid
 	taskInfoFeed.ExitTimeNS = 0
 
 	leader.GetInfo().SetFeedAt(taskInfoFeed, feedTimeStamp)
@@ -91,7 +93,7 @@ func (pt *ProcessTree) setLeaderFeed(
 	pt.PutTaskInfoFeedInPool(taskInfoFeed)
 
 	if pt.procfsQuery {
-		pt.FeedFromProcFSAsync(int(forkFeed.LeaderPid)) // try to enrich name from procfs if needed
+		pt.FeedFromProcFSAsync(forkFeed.LeaderPid) // try to enrich name from procfs if needed
 	}
 }
 
@@ -105,15 +107,15 @@ func (pt *ProcessTree) setThreadFeed(
 	taskInfoFeed := pt.GetTaskInfoFeedFromPool()
 
 	taskInfoFeed.Name = leader.GetInfo().GetName()
-	taskInfoFeed.Tid = int(forkFeed.ChildTid)
-	taskInfoFeed.Pid = int(forkFeed.ChildPid)
-	taskInfoFeed.NsTid = int(forkFeed.ChildNsTid)
-	taskInfoFeed.NsPid = int(forkFeed.ChildNsPid)
+	taskInfoFeed.Tid = forkFeed.ChildTid
+	taskInfoFeed.Pid = forkFeed.ChildPid
+	taskInfoFeed.NsTid = forkFeed.ChildNsTid
+	taskInfoFeed.NsPid = forkFeed.ChildNsPid
 	taskInfoFeed.StartTimeNS = forkFeed.ChildStartTime
-	taskInfoFeed.PPid = int(forkFeed.ParentPid)
-	taskInfoFeed.NsPPid = int(forkFeed.ParentNsPid)
-	taskInfoFeed.Uid = -1 // do not change the thread uid
-	taskInfoFeed.Gid = -1 // do not change the thread gid
+	taskInfoFeed.PPid = forkFeed.ParentPid
+	taskInfoFeed.NsPPid = forkFeed.ParentNsPid
+	taskInfoFeed.Uid = math.MaxUint32 // do not change the thread uid
+	taskInfoFeed.Gid = math.MaxUint32 // do not change the thread gid
 	taskInfoFeed.ExitTimeNS = 0
 
 	thread.GetInfo().SetFeedAt(taskInfoFeed, feedTimeStamp)
@@ -148,11 +150,11 @@ func (pt *ProcessTree) FeedFromFork(feed *ForkFeed) error {
 	// might have been created by execve() events, and those need to be updated (they're missing
 	// ppid, for example).
 
-	if !found || parent.GetInfo().GetPid() != int(feed.ParentPid) {
+	if !found || parent.GetInfo().GetPid() != feed.ParentPid {
 		pt.setParentFeed(parent, feed, feedTimeStamp)
 	}
 
-	parent.AddChild(feed.LeaderHash) // add the leader as a child of the parent
+	pt.AddChildToProcess(feed.ParentHash, feed.LeaderHash) // add the leader as a child of the parent
 
 	// Update the leader process (might exist, might be the same as child if child is a process)
 
@@ -163,7 +165,7 @@ func (pt *ProcessTree) FeedFromFork(feed *ForkFeed) error {
 
 	// Same case here (for events out of order created by execve first)
 
-	if !found || leader.GetInfo().GetPPid() != int(feed.ParentPid) {
+	if !found || leader.GetInfo().GetPPid() != feed.ParentPid {
 		pt.setLeaderFeed(leader, parent, feed, feedTimeStamp)
 	}
 
@@ -189,36 +191,38 @@ func (pt *ProcessTree) FeedFromFork(feed *ForkFeed) error {
 
 	// Same case here (for events out of order created by execve first)
 
-	if !found || thread.GetInfo().GetPPid() != int(feed.ParentPid) {
+	if !found || thread.GetInfo().GetPPid() != feed.ParentPid {
 		pt.setThreadFeed(thread, leader, feed, feedTimeStamp)
 	}
 
-	thread.SetParentHash(feed.ParentHash) // all threads have the same parent as the thread group leader
-	thread.SetLeaderHash(feed.LeaderHash) // thread group leader is a "process" and a "thread"
-	leader.AddThread(feed.ChildHash)      // add the thread to the thread group leader
+	thread.SetParentHash(feed.ParentHash)                  // all threads have the same parent as the thread group leader
+	thread.SetLeaderHash(feed.LeaderHash)                  // thread group leader is a "process" and a "thread"
+	pt.AddThreadToProcess(feed.LeaderHash, feed.ChildHash) // add the thread to the thread group leader
 
 	return nil
 }
 
 type ExecFeed struct {
-	TimeStamp  uint64
-	TaskHash   uint32
-	ParentHash uint32
-	LeaderHash uint32
-	CmdPath    string
-	PathName   string
-	Dev        uint32
-	Inode      uint64
-	Ctime      uint64
-	InodeMode  uint16
+	TimeStamp         uint64
+	Inode             uint64
+	Ctime             uint64
+	CmdPath           string
+	PathName          string
+	Interp            string
+	StdinPath         string
+	TaskHash          uint32
+	ParentHash        uint32
+	LeaderHash        uint32
+	Dev               uint32
+	InvokedFromKernel bool
+	_                 [3]byte // padding
+	InodeMode         uint16
+	StdinType         uint16
+
 	// InterpreterPath   string
 	// InterpreterDev    uint32
 	// InterpreterInode  uint64
 	// InterpreterCtime  uint64
-	Interp            string
-	StdinType         uint16
-	StdinPath         string
-	InvokedFromKernel int32
 }
 
 const COMM_LEN = 16
@@ -263,10 +267,10 @@ func (pt *ProcessTree) FeedFromExec(feed *ExecFeed) error {
 	fileInfoFeed := pt.GetFileInfoFeedFromPool()
 
 	fileInfoFeed.Path = feed.PathName
-	fileInfoFeed.Dev = int(feed.Dev)
-	fileInfoFeed.Ctime = int(feed.Ctime)
-	fileInfoFeed.Inode = int(feed.Inode)
-	fileInfoFeed.InodeMode = int(feed.InodeMode)
+	fileInfoFeed.Dev = feed.Dev
+	fileInfoFeed.Ctime = feed.Ctime
+	fileInfoFeed.Inode = feed.Inode
+	fileInfoFeed.InodeMode = feed.InodeMode
 
 	process.GetExecutable().SetFeedAt(fileInfoFeed, execTimestamp)
 
@@ -281,8 +285,10 @@ type ExitFeed struct {
 	TaskHash   uint32
 	ParentHash uint32
 	LeaderHash uint32
-	ExitCode   int64
+	ExitCode   int32
+	SignalCode int32
 	Group      bool
+	_          [3]byte // padding
 }
 
 // FeedFromExit feeds the process tree with an exit event.

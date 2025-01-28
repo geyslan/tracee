@@ -1,19 +1,29 @@
 package proc
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/aquasecurity/tracee/pkg/utils/tests"
 )
 
-func TestExtractNSFromLink(t *testing.T) {
+// TestProcNS_PrintSizes prints the sizes of the structs used in the ProcNS type.
+// Run it as DEBUG test to see the output.
+func TestTaskInfoFeed_PrintSizes(t *testing.T) {
+	procNS := ProcNS{}
+	tests.PrintStructSizes(t, os.Stdout, procNS)
+}
+
+func Test_extractNSFromLink(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
 		name          string
 		link          string
-		expectedNS    int
+		expectedNS    uint32
 		expectedError bool
 	}{
 		{

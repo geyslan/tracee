@@ -11192,7 +11192,7 @@ var CoreEvents = map[ID]Definition{
 			{Type: "const char*", Name: "interp"},
 			{Type: "umode_t", Name: "stdin_type"},
 			{Type: "char*", Name: "stdin_path"},
-			{Type: "int", Name: "invoked_from_kernel"},
+			{Type: "bool", Name: "invoked_from_kernel"},
 			{Type: "const char*", Name: "prev_comm"},
 			{Type: "const char**", Name: "env"},
 		},
@@ -11209,8 +11209,9 @@ var CoreEvents = map[ID]Definition{
 			},
 		},
 		sets: []string{"proc", "proc_life"},
-		params: []trace.ArgMeta{
-			{Type: "long", Name: "exit_code"},
+		fields: []trace.ArgMeta{
+			{Type: "int", Name: "exit_code"},
+			{Type: "int", Name: "signal_code"},
 			// The field value represents that all threads exited at the event time.
 			// Multiple exits of threads of the same process group at the same time could result that all threads exit
 			// events would have 'true' value in this field altogether.
@@ -13042,6 +13043,63 @@ var CoreEvents = map[ID]Definition{
 			{Type: "int", Name: "tz_dsttime"},
 		},
 	},
+	ChmodCommon: {
+		id:      ChmodCommon,
+		id32Bit: Sys32Undefined,
+		name:    "chmod_common",
+		version: NewVersion(1, 0, 0),
+		syscall: true,
+		sets:    []string{"default"},
+		fields: []trace.ArgMeta{
+			{Type: "const char*", Name: "pathname"},
+			{Type: "umode_t", Name: "mode"},
+		},
+		dependencies: Dependencies{
+			probes: []Probe{
+				{handle: probes.ChmodCommon, required: true},
+			},
+		},
+	},
+	SuspiciousSyscallSource: {
+		id:      SuspiciousSyscallSource,
+		id32Bit: Sys32Undefined,
+		name:    "suspicious_syscall_source",
+		dependencies: Dependencies{
+			probes: []Probe{
+				{handle: probes.SchedProcessFork, required: false}, // for thread stack tracking
+				{handle: probes.SchedProcessExec, required: false}, // for thread stack tracking
+			},
+		},
+		sets: []string{},
+		fields: []trace.ArgMeta{
+			{Type: "int", Name: "syscall"}, // converted to syscall name (string) at processing stage
+			{Type: "void*", Name: "ip"},
+			{Type: "char*", Name: "vma_type"},
+			{Type: "void*", Name: "vma_start"},
+			{Type: "unsigned long", Name: "vma_size"},
+			{Type: "unsigned long", Name: "vma_flags"},
+		},
+	},
+	StackPivot: {
+		id:      StackPivot,
+		id32Bit: Sys32Undefined,
+		name:    "stack_pivot",
+		dependencies: Dependencies{
+			probes: []Probe{
+				{handle: probes.SchedProcessFork, required: false}, // for thread stack tracking
+				{handle: probes.SchedProcessExec, required: false}, // for thread stack tracking
+			},
+		},
+		sets: []string{},
+		fields: []trace.ArgMeta{
+			{Type: "int", Name: "syscall"}, // converted to syscall name (string) at processing stage
+			{Type: "void*", Name: "sp"},
+			{Type: "char*", Name: "vma_type"},
+			{Type: "void*", Name: "vma_start"},
+			{Type: "unsigned long", Name: "vma_size"},
+			{Type: "unsigned long", Name: "vma_flags"},
+		},
+	},
 	//
 	// Begin of Signal Events (Control Plane)
 	//
@@ -13154,7 +13212,7 @@ var CoreEvents = map[ID]Definition{
 			{Type: "const char*", Name: "interp"},
 			{Type: "umode_t", Name: "stdin_type"},
 			{Type: "char*", Name: "stdin_path"},
-			{Type: "int", Name: "invoked_from_kernel"},
+			{Type: "bool", Name: "invoked_from_kernel"},
 		},
 	},
 	SignalSchedProcessExit: {
@@ -13173,7 +13231,8 @@ var CoreEvents = map[ID]Definition{
 			{Type: "u32", Name: "task_hash"},
 			{Type: "u32", Name: "parent_hash"},
 			{Type: "u32", Name: "leader_hash"},
-			{Type: "long", Name: "exit_code"},
+			{Type: "int", Name: "exit_code"},
+			{Type: "int", Name: "signal_code"},
 			{Type: "bool", Name: "process_group_exit"},
 		},
 	},

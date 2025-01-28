@@ -1,6 +1,7 @@
 package proctree
 
 import (
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -11,11 +12,12 @@ import (
 // FileInfoFeed allows external packages to set/get multiple values of a task at once.
 type FileInfoFeed struct {
 	// Name      string
-	Path      string // mutable (file path)
-	Dev       int    // mutable (device number)
-	Ctime     int    // mutable (creation time)
-	Inode     int    // mutable (inode number)
-	InodeMode int    // mutable (inode mode)
+	Path      string  // mutable (file path)
+	Dev       uint32  // mutable (device number)
+	InodeMode uint16  // mutable (inode mode)
+	_         [2]byte // padding
+	Ctime     uint64  // mutable (creation time)
+	Inode     uint64  // mutable (inode number)
 }
 
 //
@@ -88,16 +90,16 @@ func (fi *FileInfo) setFeedAt(feed *FileInfoFeed, targetTime time.Time) {
 		}
 		atFeed.Path = filePath
 	}
-	if feed.Dev >= 0 {
+	if feed.Dev != math.MaxUint32 {
 		atFeed.Dev = feed.Dev
 	}
-	if feed.Ctime >= 0 {
+	if feed.Ctime != math.MaxUint64 {
 		atFeed.Ctime = feed.Ctime
 	}
-	if feed.Inode >= 0 {
+	if feed.Inode != math.MaxUint64 {
 		atFeed.Inode = feed.Inode
 	}
-	if feed.InodeMode >= 0 {
+	if feed.InodeMode != math.MaxUint16 {
 		atFeed.InodeMode = feed.InodeMode
 	}
 
@@ -145,7 +147,7 @@ func (fi *FileInfo) GetPathAt(targetTime time.Time) string {
 }
 
 // GetDev returns the device number of the file.
-func (fi *FileInfo) GetDev() int {
+func (fi *FileInfo) GetDev() uint32 {
 	fi.mutex.RLock()
 	defer fi.mutex.RUnlock()
 
@@ -153,7 +155,7 @@ func (fi *FileInfo) GetDev() int {
 }
 
 // GetDevAt returns the device number of the file at the given time.
-func (fi *FileInfo) GetDevAt(targetTime time.Time) int {
+func (fi *FileInfo) GetDevAt(targetTime time.Time) uint32 {
 	fi.mutex.RLock()
 	defer fi.mutex.RUnlock()
 
@@ -161,7 +163,7 @@ func (fi *FileInfo) GetDevAt(targetTime time.Time) int {
 }
 
 // GetCtime returns the creation time of the file.
-func (fi *FileInfo) GetCtime() int {
+func (fi *FileInfo) GetCtime() uint64 {
 	fi.mutex.RLock()
 	defer fi.mutex.RUnlock()
 
@@ -169,7 +171,7 @@ func (fi *FileInfo) GetCtime() int {
 }
 
 // GetCtimeAt returns the creation time of the file at the given time.
-func (fi *FileInfo) GetCtimeAt(targetTime time.Time) int {
+func (fi *FileInfo) GetCtimeAt(targetTime time.Time) uint64 {
 	fi.mutex.RLock()
 	defer fi.mutex.RUnlock()
 
@@ -177,7 +179,7 @@ func (fi *FileInfo) GetCtimeAt(targetTime time.Time) int {
 }
 
 // GetInode returns the inode number of the file.
-func (fi *FileInfo) GetInode() int {
+func (fi *FileInfo) GetInode() uint64 {
 	fi.mutex.RLock()
 	defer fi.mutex.RUnlock()
 
@@ -185,7 +187,7 @@ func (fi *FileInfo) GetInode() int {
 }
 
 // GetInodeAt returns the inode number of the file at the given time.
-func (fi *FileInfo) GetInodeAt(targetTime time.Time) int {
+func (fi *FileInfo) GetInodeAt(targetTime time.Time) uint64 {
 	fi.mutex.RLock()
 	defer fi.mutex.RUnlock()
 
@@ -193,7 +195,7 @@ func (fi *FileInfo) GetInodeAt(targetTime time.Time) int {
 }
 
 // GetInodeMode returns the inode mode of the file.
-func (fi *FileInfo) GetInodeMode() int {
+func (fi *FileInfo) GetInodeMode() uint16 {
 	fi.mutex.RLock()
 	defer fi.mutex.RUnlock()
 
@@ -201,7 +203,7 @@ func (fi *FileInfo) GetInodeMode() int {
 }
 
 // GetInodeModeAt returns the inode mode of the file at the given time.
-func (fi *FileInfo) GetInodeModeAt(targetTime time.Time) int {
+func (fi *FileInfo) GetInodeModeAt(targetTime time.Time) uint16 {
 	fi.mutex.RLock()
 	defer fi.mutex.RUnlock()
 

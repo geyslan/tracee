@@ -73,7 +73,7 @@ func Benchmark_procTreeExecProcessor(b *testing.B) {
 		{ArgMeta: trace.ArgMeta{Name: "interp"}, Value: "/lib64/ld-linux-x86-64.so.2"},
 		{ArgMeta: trace.ArgMeta{Name: "stdin_type"}, Value: uint16(1)},
 		{ArgMeta: trace.ArgMeta{Name: "stdin_path"}, Value: "/dev/null"},
-		{ArgMeta: trace.ArgMeta{Name: "invoked_from_kernel"}, Value: int32(1)},
+		{ArgMeta: trace.ArgMeta{Name: "invoked_from_kernel"}, Value: bool(true)},
 	}
 
 	b.ResetTimer()
@@ -98,7 +98,8 @@ func Benchmark_procTreeExitProcessor(b *testing.B) {
 		{ArgMeta: trace.ArgMeta{Name: "task_hash"}, Value: uint32(1)},
 		{ArgMeta: trace.ArgMeta{Name: "parent_hash"}, Value: uint32(1)},
 		{ArgMeta: trace.ArgMeta{Name: "leader_hash"}, Value: uint32(1)},
-		{ArgMeta: trace.ArgMeta{Name: "exit_code"}, Value: int64(1)},
+		{ArgMeta: trace.ArgMeta{Name: "exit_code"}, Value: int32(1)},
+		{ArgMeta: trace.ArgMeta{Name: "signal_code"}, Value: int32(1)},
 		{ArgMeta: trace.ArgMeta{Name: "process_group_exit"}, Value: true},
 	}
 

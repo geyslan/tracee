@@ -23,8 +23,8 @@ func (pt *ProcessTree) String() string {
 	// getListOfChildrenPids returns a comma-separated list of children pids for a given process.
 	getListOfChildrenPids := func(process *Process) string {
 		var childrenPids []string
-		for _, childHash := range process.GetChildren() { // for each child
-			child, ok := pt.processes.Get(childHash)
+		for _, childHash := range pt.GetChildren(process.GetHash()) { // for each child
+			child, ok := pt.processesLRU.Get(childHash)
 			if !ok {
 				continue
 			}
@@ -51,8 +51,8 @@ func (pt *ProcessTree) String() string {
 	// getListOfThreadsTids returns a comma-separated list of threads tids for a given process.
 	getListOfThreadsTids := func(process *Process) string {
 		var threadsTids []string
-		for _, threadHash := range process.GetThreads() { // for each thread (if process is a thread group leader)
-			thread, ok := pt.threads.Get(threadHash)
+		for _, threadHash := range pt.GetThreads(process.GetHash()) { // for each thread (if process is a thread group leader)
+			thread, ok := pt.threadsLRU.Get(threadHash)
 			if !ok {
 				continue
 			}
@@ -107,8 +107,8 @@ func (pt *ProcessTree) String() string {
 
 	// Walk the process tree and create a table row for each process:
 
-	for _, hash := range pt.processes.Keys() { // for each process
-		process, ok := pt.processes.Get(hash)
+	for _, hash := range pt.processesLRU.Keys() { // for each process
+		process, ok := pt.processesLRU.Get(hash)
 		if !ok {
 			continue
 		}
@@ -124,9 +124,9 @@ func (pt *ProcessTree) String() string {
 		}
 		hashStr := fmt.Sprintf("%v", process.GetHash())
 		startTime := fmt.Sprintf("%v", process.GetInfo().GetStartTimeNS())
-		tid := stringify(processFeed.Tid)
-		pid := stringify(processFeed.Pid)
-		ppid := stringify(processFeed.PPid)
+		tid := stringify(int(processFeed.Tid))
+		pid := stringify(int(processFeed.Pid))
+		ppid := stringify(int(processFeed.PPid))
 		date := process.GetInfo().GetStartTime().Format("2006-01-02 15:04:05")
 
 		// add the row to the table

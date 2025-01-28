@@ -1403,16 +1403,13 @@ int sched_process_exec_event_submit_tail(struct bpf_raw_tracepoint_args *ctx)
     void *stdin_path = get_path_str(__builtin_preserve_access_index(&stdin_file->f_path));
     const char *interp = get_binprm_interp(bprm);
 
-    int invoked_from_kernel = 0;
-    if (get_task_parent_flags(task) & PF_KTHREAD) {
-        invoked_from_kernel = 1;
-    }
+    bool invoked_from_kernel = !!(get_task_parent_flags(task) & PF_KTHREAD);
 
     save_args_str_arr_to_buf(&p.event->args_buf, (void *) arg_start, (void *) arg_end, argc, 10);
     save_str_to_buf(&p.event->args_buf, (void *) interp, 11);
     save_to_submit_buf(&p.event->args_buf, &stdin_type, sizeof(unsigned short), 12);
     save_str_to_buf(&p.event->args_buf, stdin_path, 13);
-    save_to_submit_buf(&p.event->args_buf, &invoked_from_kernel, sizeof(int), 14);
+    save_to_submit_buf(&p.event->args_buf, &invoked_from_kernel, sizeof(bool), 14);
     save_str_to_buf(&p.event->args_buf, (void *) p.task_info->context.comm, 15);
     if (p.config->options & OPT_EXEC_ENV) {
         unsigned long env_start, env_end;
@@ -1436,6 +1433,24 @@ int tracepoint__sched__sched_process_exit(struct bpf_raw_tracepoint_args *ctx)
     if (!init_program_data(&p, ctx, SCHED_PROCESS_EXIT))
         return 0;
 
+    // The syscall number cannot be trusted in the following cases:
+    //
+    // 1. If the task was terminated due to a signal (PF_SIGNALED is set), the syscall
+    //    context may be inconsistent.
+    //
+    // 2. If the task was not signaled:
+    //    - A kernel thread (PF_KTHREAD is set) is not expected to have a valid syscall context, so
+    //      the function init_program_data has already set its syscall number as NO_SYSCALL (-1).
+    //    - If PF_KTHREAD is not set but the syscall value is negative, it may be due to
+    //      an invalid or clobbered context.
+    //
+    // In any of these cases, we explicitly mark the syscall number as NO_SYSCALL (-1) to avoid
+    // misinterpretation.
+    int task_flags = get_task_flags(p.event->task);
+    if ((task_flags & PF_SIGNALED) ||
+        (!(task_flags & PF_KTHREAD) && (p.event->context.syscall < 0)))
+        p.event->context.syscall = NO_SYSCALL;
+
     // evaluate matched_policies before removing this pid from the maps
     evaluate_scope_filters(&p);
 
@@ -1444,7 +1459,6 @@ int tracepoint__sched__sched_process_exit(struct bpf_raw_tracepoint_args *ctx)
     if (!policies_matched(p.event))
         return 0;
 
-    long exit_code = get_task_exit_code(p.event->task);
     bool group_dead = false;
     struct task_struct *task = p.event->task;
     struct signal_struct *signal = BPF_CORE_READ(task, signal);
@@ -1456,8 +1470,16 @@ int tracepoint__sched__sched_process_exit(struct bpf_raw_tracepoint_args *ctx)
         group_dead = true;
     }
 
-    save_to_submit_buf(&p.event->args_buf, (void *) &exit_code, sizeof(long), 0);
-    save_to_submit_buf(&p.event->args_buf, (void *) &group_dead, sizeof(bool), 1);
+    // extract exit code and signal values
+    int exit_code = get_task_exit_code(p.event->task);
+    int exit_code_real = exit_code >> 8;
+
+    save_to_submit_buf(&p.event->args_buf, (void *) &exit_code_real, sizeof(int), 0);
+    if (task_flags & PF_SIGNALED) {
+        int signal_code = exit_code & 0xFF;
+        save_to_submit_buf(&p.event->args_buf, (void *) &signal_code, sizeof(int), 1);
+    }
+    save_to_submit_buf(&p.event->args_buf, (void *) &group_dead, sizeof(bool), 2);
 
     events_perf_submit(&p, 0);
 
@@ -5164,6 +5186,186 @@ int BPF_KPROBE(trace_security_settime64)
     return events_perf_submit(&p, 0);
 }
 
+SEC("kprobe/chmod_common")
+int BPF_KPROBE(trace_chmod_common)
+{
+    program_data_t p = {};
+    if (!init_program_data(&p, ctx, CHMOD_COMMON))
+        return 0;
+
+    if (!evaluate_scope_filters(&p))
+        return 0;
+
+    struct path *path = (struct path *) PT_REGS_PARM1(ctx);
+    umode_t mode = PT_REGS_PARM2(ctx);
+    void *file_path = get_path_str(path);
+
+    save_str_to_buf(&p.event->args_buf, file_path, 0);
+    save_to_submit_buf(&p.event->args_buf, &mode, sizeof(umode_t), 1);
+
+    return events_perf_submit(&p, 0);
+}
+
+//
+// Syscall checkers
+//
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, MAX_EVENT_ID);
+    __type(key, u32);
+    __type(value, u32);
+} suspicious_syscall_source_syscalls SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, MAX_EVENT_ID);
+    __type(key, u32);
+    __type(value, u32);
+} stack_pivot_syscalls SEC(".maps");
+
+statfunc void check_suspicious_syscall_source(void *ctx, struct pt_regs *regs, u32 syscall)
+{
+    program_data_t p = {};
+    if (!init_program_data(&p, ctx, SUSPICIOUS_SYSCALL_SOURCE))
+        return;
+
+    if (!evaluate_scope_filters(&p))
+        return;
+
+    // Get instruction pointer
+    u64 ip = PT_REGS_IP_CORE(regs);
+
+    // Find VMA which contains the instruction pointer
+    struct task_struct *task = (struct task_struct *) bpf_get_current_task();
+    if (unlikely(task == NULL))
+        return;
+    struct vm_area_struct *vma = find_vma(ctx, task, ip);
+    if (unlikely(vma == NULL))
+        return;
+
+    // If the VMA is file-backed, the syscall is determined to be legitimate
+    if (vma_is_file_backed(vma))
+        return;
+
+    // In 32-bit compat mode, syscalls may be invoked by calling into a VDSO provided
+    // syscall handler (the vsyscall mechanism).
+    // Even the 64-bit VDSO may invoke syscalls, as a fallback mechanism.
+    // In such cases, we don't know where was the code that called into the VDSO.
+    if (vma_is_vdso(vma))
+        return;
+
+    // Build a key that identifies the combination of syscall,
+    // source VMA and process so we don't submit it multiple times
+    syscall_source_key_t key = {.syscall = syscall,
+                                .tgid = get_task_host_tgid(task),
+                                .tgid_start_time = get_task_start_time(get_leader_task(task)),
+                                .vma_addr = BPF_CORE_READ(vma, vm_start)};
+    bool val = true;
+
+    // Try updating the map with the requirement that this key does not exist yet
+    if ((int) bpf_map_update_elem(&syscall_source_map, &key, &val, BPF_NOEXIST) == -EEXIST)
+        // This key already exists, no need to submit the same syscall-vma-process combination again
+        return;
+
+    enum vma_type vma_type = get_vma_type(vma);
+    if (vma_type == VMA_ANON && address_in_thread_stack(p.task_info, ip))
+        vma_type = VMA_THREAD_STACK;
+
+    const char *vma_type_str = get_vma_type_str(vma_type);
+    unsigned long vma_start = BPF_CORE_READ(vma, vm_start);
+    unsigned long vma_size = BPF_CORE_READ(vma, vm_end) - vma_start;
+    unsigned long vma_flags = BPF_CORE_READ(vma, vm_flags);
+
+    save_to_submit_buf(&p.event->args_buf, &syscall, sizeof(syscall), 0);
+    save_to_submit_buf(&p.event->args_buf, &ip, sizeof(ip), 1);
+    save_str_to_buf(&p.event->args_buf, (void *) vma_type_str, 2);
+    save_to_submit_buf(&p.event->args_buf, &vma_start, sizeof(vma_start), 3);
+    save_to_submit_buf(&p.event->args_buf, &vma_size, sizeof(vma_size), 4);
+    save_to_submit_buf(&p.event->args_buf, &vma_flags, sizeof(vma_flags), 5);
+
+    events_perf_submit(&p, 0);
+}
+
+statfunc void check_stack_pivot(void *ctx, struct pt_regs *regs, u32 syscall)
+{
+    program_data_t p = {};
+
+    if (!init_program_data(&p, ctx, STACK_PIVOT))
+        return;
+
+    if (!evaluate_scope_filters(&p))
+        return;
+
+    // Get stack pointer
+    u64 sp = PT_REGS_SP_CORE(regs);
+
+    // Find VMA which contains the stack pointer
+    struct task_struct *task = (struct task_struct *) bpf_get_current_task();
+    if (unlikely(task == NULL))
+        return;
+    struct vm_area_struct *vma = find_vma(ctx, task, sp);
+    if (unlikely(vma == NULL))
+        return;
+
+    // Check if the stack pointer points to the stack region.
+    //
+    // Goroutine stacks are allocated on golang's heap, which means that an
+    // exploit performing a stack pivot on a go program will result in a false
+    // negative if the new stack location is on golang's heap.
+    //
+    // To identify thread stacks, they need to be tracked when new threads are
+    // created. This means that we cannot identify stacks of threads that were
+    // created before tracee started. To avoid false positives, we ignore events
+    // where the stack pointer's VMA might be a thread stack but it was not
+    // tracked for this thread. This may result in false negatives.
+    enum vma_type vma_type = get_vma_type(vma);
+    if (vma_type == VMA_MAIN_STACK || vma_type == VMA_GOLANG_HEAP || vma_type == VMA_THREAD_STACK ||
+        (vma_type == VMA_ANON &&
+         (!thread_stack_tracked(p.task_info) || address_in_thread_stack(p.task_info, sp))))
+        return;
+
+    const char *vma_type_str = get_vma_type_str(vma_type);
+    unsigned long vma_start = BPF_CORE_READ(vma, vm_start);
+    unsigned long vma_size = BPF_CORE_READ(vma, vm_end) - vma_start;
+    unsigned long vma_flags = BPF_CORE_READ(vma, vm_flags);
+
+    save_to_submit_buf(&p.event->args_buf, &syscall, sizeof(syscall), 0);
+    save_to_submit_buf(&p.event->args_buf, &sp, sizeof(sp), 1);
+    save_str_to_buf(&p.event->args_buf, (void *) vma_type_str, 2);
+    save_to_submit_buf(&p.event->args_buf, &vma_start, sizeof(vma_start), 3);
+    save_to_submit_buf(&p.event->args_buf, &vma_size, sizeof(vma_size), 4);
+    save_to_submit_buf(&p.event->args_buf, &vma_flags, sizeof(vma_flags), 5);
+
+    events_perf_submit(&p, 0);
+}
+
+SEC("kprobe/syscall_checker")
+int BPF_KPROBE(syscall_checker)
+{
+    // Get user registers
+    struct pt_regs *regs = ctx;
+    if (get_kconfig(ARCH_HAS_SYSCALL_WRAPPER))
+        regs = (struct pt_regs *) PT_REGS_PARM1(ctx);
+
+    // Get syscall ID
+    u32 syscall = get_syscall_id_from_regs(regs);
+    if (is_compat((struct task_struct *) bpf_get_current_task())) {
+        u32 *id_64 = bpf_map_lookup_elem(&sys_32_to_64_map, &syscall);
+        if (id_64 == NULL)
+            return 0;
+        syscall = *id_64;
+    }
+
+    if (bpf_map_lookup_elem(&suspicious_syscall_source_syscalls, &syscall) != NULL)
+        check_suspicious_syscall_source(ctx, regs, syscall);
+
+    if (bpf_map_lookup_elem(&stack_pivot_syscalls, &syscall) != NULL)
+        check_stack_pivot(ctx, regs, syscall);
+
+    return 0;
+}
+
 // clang-format off
 
 // Network Packets (works from ~5.2 and beyond)
@@ -6798,15 +7000,13 @@ int sched_process_exec_signal(struct bpf_raw_tracepoint_args *ctx)
     void *stdin_path = get_path_str(__builtin_preserve_access_index(&stdin_file->f_path));
     const char *interp = get_binprm_interp(bprm);
 
-    int invoked_from_kernel = 0;
-    if (get_task_parent_flags(task) & PF_KTHREAD)
-        invoked_from_kernel = 1;
+    bool invoked_from_kernel = !!(get_task_parent_flags(task) & PF_KTHREAD);
 
     save_args_str_arr_to_buf(&signal->args_buf, (void *) arg_start, (void *) arg_end, argc, 14); // argv
     save_str_to_buf(&signal->args_buf, (void *) interp, 15);                                     // interp
     save_to_submit_buf(&signal->args_buf, &stdin_type, sizeof(unsigned short), 16);              // stdin type
     save_str_to_buf(&signal->args_buf, stdin_path, 17);                                          // stdin path
-    save_to_submit_buf(&signal->args_buf, &invoked_from_kernel, sizeof(int), 18);                // invoked from kernel ?
+    save_to_submit_buf(&signal->args_buf, &invoked_from_kernel, sizeof(bool), 18);                // invoked from kernel ?
 
     signal_perf_submit(ctx, signal);
 
@@ -6852,10 +7052,17 @@ int sched_process_exit_signal(struct bpf_raw_tracepoint_args *ctx)
     if (live.counter == 0)
         group_dead = true;
 
-    long exit_code = get_task_exit_code(task);
+    // extract exit code and signal values
+    int task_flags = get_task_flags(task);
+    int exit_code = get_task_exit_code(task);
+    int exit_code_real = exit_code >> 8;
 
-    save_to_submit_buf(&signal->args_buf, (void *) &exit_code, sizeof(long), 4);
-    save_to_submit_buf(&signal->args_buf, (void *) &group_dead, sizeof(bool), 5);
+    save_to_submit_buf(&signal->args_buf, (void *) &exit_code_real, sizeof(int), 4);
+    if (task_flags & PF_SIGNALED) {
+        int signal_code = exit_code & 0xFF;
+        save_to_submit_buf(&signal->args_buf, (void *) &signal_code, sizeof(int), 5);
+    }
+    save_to_submit_buf(&signal->args_buf, (void *) &group_dead, sizeof(bool), 6);
 
     signal_perf_submit(ctx, signal);
 

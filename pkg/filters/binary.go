@@ -1,6 +1,7 @@
 package filters
 
 import (
+	"math"
 	"strconv"
 	"strings"
 
@@ -26,7 +27,7 @@ type BinaryFilter struct {
 var _ utils.Cloner[*BinaryFilter] = &BinaryFilter{}
 
 func getHostMntNS() (uint32, error) {
-	var ns int
+	var ns uint32
 	var err error
 
 	ns, err = proc.GetProcNS(1, "mnt")
@@ -34,7 +35,7 @@ func getHostMntNS() (uint32, error) {
 		return 0, errfmt.WrapError(err)
 	}
 
-	return uint32(ns), nil
+	return ns, nil
 }
 
 func NewBinaryFilter() *BinaryFilter {
@@ -80,8 +81,11 @@ func (f *BinaryFilter) Parse(operatorAndValues string) error {
 				}
 				bin.MntNS = hostMntNS
 			} else {
-				mntNS, err := strconv.Atoi(mntAndPath[0])
+				mntNS, err := strconv.ParseUint(mntAndPath[0], 10, 32)
 				if err != nil {
+					return InvalidValue(val)
+				}
+				if mntNS > math.MaxUint32 {
 					return InvalidValue(val)
 				}
 				bin.MntNS = uint32(mntNS)
