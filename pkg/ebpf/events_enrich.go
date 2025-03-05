@@ -88,6 +88,7 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 		for { // enqueue events
 			select {
 			case event := <-in:
+				_ = t.stats.EnrichContainerEventsCount.Increment()
 				if event == nil {
 					continue // might happen during initialization (ctrl+c seg faults)
 				}

@@ -9,17 +9,21 @@ import (
 
 // When updating this struct, please make sure to update the relevant exporting functions
 type Stats struct {
-	EventCount       counter.Counter
-	EventsFiltered   counter.Counter
-	NetCapCount      counter.Counter // network capture events
-	BPFLogsCount     counter.Counter
-	ErrorCount       counter.Counter
-	LostEvCount      counter.Counter
-	LostWrCount      counter.Counter
-	LostNtCapCount   counter.Counter // lost network capture events
-	LostBPFLogsCount counter.Counter
-	DecodeEvent      counter.Counter
-
+	EventCount                 counter.Counter
+	EventsFiltered             counter.Counter
+	NetCapCount                counter.Counter // network capture events
+	BPFLogsCount               counter.Counter
+	ErrorCount                 counter.Counter
+	LostEvCount                counter.Counter
+	LostWrCount                counter.Counter
+	LostNtCapCount             counter.Counter // lost network capture events
+	LostBPFLogsCount           counter.Counter
+	DecodeEvent                counter.Counter
+	QueueEventsCount           counter.Counter
+	ProcessEventsCount         counter.Counter
+	EnrichContainerEventsCount counter.Counter
+	DeriveEventsCount          counter.Counter
+	EngineEventsCount          counter.Counter
 	// NOTE: BPFPerfEventSubmit* metrics are periodically collected from the 'events_stats'
 	// BPF map, while userspace metrics are continuously updated within the application
 	// based on varying logic. Due to differences in data sources and collection timing,
@@ -33,16 +37,21 @@ type Stats struct {
 
 func NewStats() *Stats {
 	return &Stats{
-		EventCount:       counter.NewCounter(0),
-		EventsFiltered:   counter.NewCounter(0),
-		NetCapCount:      counter.NewCounter(0),
-		BPFLogsCount:     counter.NewCounter(0),
-		ErrorCount:       counter.NewCounter(0),
-		LostEvCount:      counter.NewCounter(0),
-		LostWrCount:      counter.NewCounter(0),
-		LostNtCapCount:   counter.NewCounter(0),
-		LostBPFLogsCount: counter.NewCounter(0),
-		DecodeEvent:      counter.NewCounter(0),
+		EventCount:                 counter.NewCounter(0),
+		EventsFiltered:             counter.NewCounter(0),
+		NetCapCount:                counter.NewCounter(0),
+		BPFLogsCount:               counter.NewCounter(0),
+		ErrorCount:                 counter.NewCounter(0),
+		LostEvCount:                counter.NewCounter(0),
+		LostWrCount:                counter.NewCounter(0),
+		LostNtCapCount:             counter.NewCounter(0),
+		LostBPFLogsCount:           counter.NewCounter(0),
+		DecodeEvent:                counter.NewCounter(0),
+		QueueEventsCount:           counter.NewCounter(0),
+		ProcessEventsCount:         counter.NewCounter(0),
+		EnrichContainerEventsCount: counter.NewCounter(0),
+		DeriveEventsCount:          counter.NewCounter(0),
+		EngineEventsCount:          counter.NewCounter(0),
 		BPFPerfEventSubmitAttemptsCount: NewEventCollector(
 			"Event submit attempts",
 			prometheus.NewGaugeVec(

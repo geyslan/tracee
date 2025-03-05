@@ -129,6 +129,7 @@ func (t *Tracee) queueEvents(ctx context.Context, in <-chan *trace.Event) (chan 
 			case event := <-in:
 				if event != nil {
 					t.config.Cache.Enqueue(event) // may block if queue is full
+					_ = t.stats.QueueEventsCount.Increment()
 				}
 			}
 		}
@@ -449,6 +450,8 @@ func (t *Tracee) processEvents(ctx context.Context, in <-chan *trace.Event) (
 		defer close(errc)
 
 		for event := range in { // For each received event...
+			// Increment the counter
+			_ = t.stats.ProcessEventsCount.Increment()
 			if event == nil {
 				continue // might happen during initialization (ctrl+c seg faults)
 			}
@@ -502,6 +505,7 @@ func (t *Tracee) processEvents(ctx context.Context, in <-chan *trace.Event) (
 			case <-ctx.Done():
 				return
 			}
+
 		}
 	}()
 	return out, errc
@@ -523,6 +527,7 @@ func (t *Tracee) deriveEvents(ctx context.Context, in <-chan *trace.Event) (
 		for {
 			select {
 			case event := <-in:
+				_ = t.stats.DeriveEventsCount.Increment() // Increment the counter
 				if event == nil {
 					continue // might happen during initialization (ctrl+c seg faults)
 				}

@@ -66,6 +66,7 @@ func (t *Tracee) engineEvents(ctx context.Context, in <-chan *trace.Event) (<-ch
 
 		// feedEngine feeds an event to the rules engine
 		feedEngine := func(event *trace.Event) {
+			_ = t.stats.EngineEventsCount.Increment()
 			if event == nil {
 				return // might happen during initialization (ctrl+c seg faults)
 			}
