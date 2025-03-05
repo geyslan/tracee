@@ -18,6 +18,7 @@ type Stats struct {
 	LostWrCount      counter.Counter
 	LostNtCapCount   counter.Counter // lost network capture events
 	LostBPFLogsCount counter.Counter
+	DecodeEvent      counter.Counter
 
 	// NOTE: BPFPerfEventSubmit* metrics are periodically collected from the 'events_stats'
 	// BPF map, while userspace metrics are continuously updated within the application
@@ -41,6 +42,7 @@ func NewStats() *Stats {
 		LostWrCount:      counter.NewCounter(0),
 		LostNtCapCount:   counter.NewCounter(0),
 		LostBPFLogsCount: counter.NewCounter(0),
+		DecodeEvent:      counter.NewCounter(0),
 		BPFPerfEventSubmitAttemptsCount: NewEventCollector(
 			"Event submit attempts",
 			prometheus.NewGaugeVec(
@@ -148,6 +150,12 @@ func (stats *Stats) RegisterPrometheus() error {
 		Name:      "network_capture_lostevents_total",
 		Help:      "network capture lost events in network capture buffer",
 	}, func() float64 { return float64(stats.LostNtCapCount.Get()) }))
+
+	err = prometheus.Register(prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Namespace: "tracee_ebpf",
+		Name:      "decode_events_total",
+		Help:      "decoded events count",
+	}, func() float64 { return float64(stats.DecodeEvent.Get()) }))
 
 	return errfmt.WrapError(err)
 }
