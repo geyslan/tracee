@@ -115,6 +115,52 @@ func (stats *Stats) RegisterPrometheus() error {
 		return errfmt.WrapError(err)
 	}
 
+	// Register new counters
+	err = prometheus.Register(prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Namespace: "tracee_ebpf",
+		Name:      "queue_events_total",
+		Help:      "total events queued in the pipeline",
+	}, func() float64 { return float64(stats.QueueEventsCount.Get()) }))
+	if err != nil {
+		return errfmt.WrapError(err)
+	}
+
+	err = prometheus.Register(prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Namespace: "tracee_ebpf",
+		Name:      "process_events_total",
+		Help:      "total events processed in the pipeline",
+	}, func() float64 { return float64(stats.ProcessEventsCount.Get()) }))
+	if err != nil {
+		return errfmt.WrapError(err)
+	}
+
+	err = prometheus.Register(prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Namespace: "tracee_ebpf",
+		Name:      "enrich_container_events_total",
+		Help:      "total container events enriched in the pipeline",
+	}, func() float64 { return float64(stats.EnrichContainerEventsCount.Get()) }))
+	if err != nil {
+		return errfmt.WrapError(err)
+	}
+
+	err = prometheus.Register(prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Namespace: "tracee_ebpf",
+		Name:      "derive_events_total",
+		Help:      "total events derived in the pipeline",
+	}, func() float64 { return float64(stats.DeriveEventsCount.Get()) }))
+	if err != nil {
+		return errfmt.WrapError(err)
+	}
+
+	err = prometheus.Register(prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Namespace: "tracee_ebpf",
+		Name:      "engine_events_total",
+		Help:      "total events processed by the engine",
+	}, func() float64 { return float64(stats.EngineEventsCount.Get()) }))
+	if err != nil {
+		return errfmt.WrapError(err)
+	}
+
 	// Updated by countPerfEventSubmissions() goroutine
 	err = prometheus.Register(stats.BPFPerfEventSubmitAttemptsCount.GaugeVec())
 	if err != nil {
@@ -159,6 +205,9 @@ func (stats *Stats) RegisterPrometheus() error {
 		Name:      "network_capture_lostevents_total",
 		Help:      "network capture lost events in network capture buffer",
 	}, func() float64 { return float64(stats.LostNtCapCount.Get()) }))
+	if err != nil {
+		return errfmt.WrapError(err)
+	}
 
 	err = prometheus.Register(prometheus.NewCounterFunc(prometheus.CounterOpts{
 		Namespace: "tracee_ebpf",
