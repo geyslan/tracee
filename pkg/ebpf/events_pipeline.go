@@ -5,9 +5,12 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"sync"
+	dflt_time "time"
 	"unsafe"
 
 	"github.com/aquasecurity/tracee/pkg/bufferdecoder"
@@ -26,13 +29,51 @@ const maxStackDepth int = 20
 // Matches 'NO_SYSCALL' in eBPF code
 const noSyscall int32 = -1
 
+func dumpStack() {
+	// Allocate a buffer for the stack trace (1MB should be sufficient in most cases)
+	buf := make([]byte, 1<<20)
+	// Capture stack traces for all goroutines
+	n := runtime.Stack(buf, true)
+
+	// Open the file in append mode, create if not exists
+	f, err := os.OpenFile("/tmp/stack.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error opening file: %v\n", err)
+		return
+	}
+	defer f.Close()
+
+	// Write the current time to the file
+	timestamp := dflt_time.Now().Format("2006-01-02 15:04:05")
+	_, err = f.WriteString(fmt.Sprintf("=== Stack dump at %s ===\n", timestamp))
+	if err != nil {
+		fmt.Printf("Error writing timestamp: %v\n", err)
+		return
+	}
+
+	// Write the captured stack trace to the file
+	_, err = f.Write(buf[:n])
+	if err != nil {
+		fmt.Printf("Error writing stack trace: %v\n", err)
+		return
+	}
+
+	// Optionally add a separator between dumps
+	_, _ = f.WriteString("\n\n")
+}
+
 // handleEvents is the main pipeline of tracee. It receives events from the perf buffer
 // and passes them through a series of stages, each stage is a goroutine that performs a
 // specific task on the event. The pipeline is started in a separate goroutine.
 func (t *Tracee) handleEvents(ctx context.Context, initialized chan<- struct{}) {
 	logger.Debugw("Starting handleEvents goroutine")
 	defer logger.Debugw("Stopped handleEvents goroutine")
-
+	go func() {
+		for {
+			dumpStack()
+			dflt_time.Sleep(10 * dflt_time.Second)
+		}
+	}()
 	var errcList []<-chan error
 
 	// Decode stage: events are read from the perf buffer and decoded into trace.Event type.
@@ -193,7 +234,7 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 				t.handleError(err)
 				continue
 			}
-
+			_ = t.stats.Test1Count.Increment()
 			// Add stack trace if needed
 			var stackAddresses []uint64
 			if t.config.Output.StackAddresses {
@@ -284,7 +325,7 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 			evt.ThreadEntityId = utils.HashTaskID(eCtx.HostTid, normalizedThreadStartTime)
 			evt.ProcessEntityId = utils.HashTaskID(eCtx.HostPid, normalizedLeaderStartTime)
 			evt.ParentEntityId = utils.HashTaskID(eCtx.HostPpid, normalizedParentStartTime)
-
+			_ = t.stats.Test2Count.Increment()
 			// If there aren't any policies that need filtering in userland, tracee **may** skip
 			// this event, as long as there aren't any derivatives or signatures that depend on it.
 			// Some base events (derivative and signatures) might not have set related policy bit,
@@ -302,6 +343,7 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 
 			select {
 			case out <- evt:
+				_ = t.stats.Test3Count.Increment()
 			case <-ctx.Done():
 				return
 			}

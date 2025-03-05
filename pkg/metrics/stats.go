@@ -24,6 +24,9 @@ type Stats struct {
 	EnrichContainerEventsCount counter.Counter
 	DeriveEventsCount          counter.Counter
 	EngineEventsCount          counter.Counter
+	Test1Count                 counter.Counter
+	Test2Count                 counter.Counter
+	Test3Count                 counter.Counter
 	// NOTE: BPFPerfEventSubmit* metrics are periodically collected from the 'events_stats'
 	// BPF map, while userspace metrics are continuously updated within the application
 	// based on varying logic. Due to differences in data sources and collection timing,
@@ -52,6 +55,9 @@ func NewStats() *Stats {
 		EnrichContainerEventsCount: counter.NewCounter(0),
 		DeriveEventsCount:          counter.NewCounter(0),
 		EngineEventsCount:          counter.NewCounter(0),
+		Test1Count:                 counter.NewCounter(0),
+		Test2Count:                 counter.NewCounter(0),
+		Test3Count:                 counter.NewCounter(0),
 		BPFPerfEventSubmitAttemptsCount: NewEventCollector(
 			"Event submit attempts",
 			prometheus.NewGaugeVec(
@@ -157,6 +163,31 @@ func (stats *Stats) RegisterPrometheus() error {
 		Name:      "engine_events_total",
 		Help:      "total events processed by the engine",
 	}, func() float64 { return float64(stats.EngineEventsCount.Get()) }))
+	if err != nil {
+		return errfmt.WrapError(err)
+	}
+
+	err = prometheus.Register(prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Namespace: "tracee_ebpf",
+		Name:      "test_1_total",
+		Help:      "total events in test",
+	}, func() float64 { return float64(stats.Test1Count.Get()) }))
+	if err != nil {
+		return errfmt.WrapError(err)
+	}
+	err = prometheus.Register(prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Namespace: "tracee_ebpf",
+		Name:      "test_2_total",
+		Help:      "total events in test",
+	}, func() float64 { return float64(stats.Test2Count.Get()) }))
+	if err != nil {
+		return errfmt.WrapError(err)
+	}
+	err = prometheus.Register(prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Namespace: "tracee_ebpf",
+		Name:      "test_3_total",
+		Help:      "total events in test",
+	}, func() float64 { return float64(stats.Test3Count.Get()) }))
 	if err != nil {
 		return errfmt.WrapError(err)
 	}
