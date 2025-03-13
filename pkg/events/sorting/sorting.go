@@ -101,12 +101,15 @@ package sorting
 
 import (
 	gocontext "context"
+	"fmt"
 	"math"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/aquasecurity/tracee/pkg/errfmt"
 	"github.com/aquasecurity/tracee/pkg/logger"
+	"github.com/aquasecurity/tracee/pkg/metrics"
 	"github.com/aquasecurity/tracee/pkg/utils/environment"
 	"github.com/aquasecurity/tracee/types/trace"
 )
@@ -142,19 +145,30 @@ func InitEventSorter() (*EventsChronologicalSorter, error) {
 	return &newSorter, nil
 }
 
-func (sorter *EventsChronologicalSorter) StartPipeline(ctx gocontext.Context, in <-chan *trace.Event, outChanSize int) (
-	chan *trace.Event, chan error) {
+func (sorter *EventsChronologicalSorter) StartPipeline(
+	ctx gocontext.Context,
+	met *metrics.Stats,
+	in <-chan *trace.Event,
+	outChanSize int,
+) (
+	chan *trace.Event, chan error,
+) {
 	out := make(chan *trace.Event, outChanSize)
 	errc := make(chan error, 1)
-	go sorter.Start(in, out, ctx, errc)
+	go sorter.Start(met, in, out, ctx, errc)
 	return out, errc
 }
 
 // Start is the main function of the EventsChronologicalSorter class, which orders input events from events channels
 // and pass forward all ordered events to the output channel after each interval.
 // When exits, the sorter will send forward all buffered events in ordered matter.
-func (sorter *EventsChronologicalSorter) Start(in <-chan *trace.Event, out chan<- *trace.Event,
-	ctx gocontext.Context, errc chan error) {
+func (sorter *EventsChronologicalSorter) Start(
+	met *metrics.Stats,
+	in <-chan *trace.Event,
+	out chan<- *trace.Event,
+	ctx gocontext.Context,
+	errc chan error,
+) {
 	sorter.errorChan = errc
 	defer close(out)
 	defer close(errc)
@@ -163,27 +177,30 @@ func (sorter *EventsChronologicalSorter) Start(in <-chan *trace.Event, out chan<
 		select {
 		case newEvent := <-in:
 			if newEvent == nil {
-				sorter.sendEvents(out, math.MaxInt64)
+				sorter.sendEvents(met, out, math.MaxInt64)
 				return
 			}
-			sorter.addEvent(newEvent)
+			sorter.addEvent(met, newEvent)
 		case <-ticker.C:
 			sorter.updateSavedTimestamps()
 			if len(sorter.extractionSavedTimestamps) > sorter.intervalsAmountThresholdForDelay {
 				extractionTimestamp := sorter.extractionSavedTimestamps[0]
 				sorter.extractionSavedTimestamps = sorter.extractionSavedTimestamps[1:]
-				go sorter.sendEvents(out, extractionTimestamp)
+				go sorter.sendEvents(met, out, extractionTimestamp)
 			}
 
 		case <-ctx.Done():
-			sorter.sendEvents(out, math.MaxInt64)
+			sorter.sendEvents(met, out, math.MaxInt64)
 			return
 		}
 	}
 }
 
 // addEvent add a new event to the appropriate place in queue according to its timestamp
-func (sorter *EventsChronologicalSorter) addEvent(newEvent *trace.Event) {
+func (sorter *EventsChronologicalSorter) addEvent(met *metrics.Stats, newEvent *trace.Event) {
+	_ = met.SortIn.Increment()
+	met.SortInLast = time.Now()
+
 	cq := &sorter.cpuEventsQueues[newEvent.ProcessorID]
 	err := cq.InsertByTimestamp(newEvent)
 	if err != nil {
@@ -193,12 +210,13 @@ func (sorter *EventsChronologicalSorter) addEvent(newEvent *trace.Event) {
 }
 
 // sendEvents send to output channel all events up to given timestamp
-func (sorter *EventsChronologicalSorter) sendEvents(outputChan chan<- *trace.Event, extractionMaxTimestamp int) {
+func (sorter *EventsChronologicalSorter) sendEvents(met *metrics.Stats, outputChan chan<- *trace.Event, extractionMaxTimestamp int) {
 	sorter.outputChanMutex.Lock()
 	defer sorter.outputChanMutex.Unlock()
 	for {
 		mostDelayingQueue, eventTimestamp, err := sorter.getMostDelayingEventCPUQueue()
 		if err != nil || eventTimestamp > extractionMaxTimestamp {
+			fmt.Fprintf(os.Stdout, "Error: %v, eventTimestamp > extractionMaxTimestamp %v", err, eventTimestamp > extractionMaxTimestamp)
 			break
 		}
 		extractionEvent, err := mostDelayingQueue.Get()
@@ -217,6 +235,8 @@ func (sorter *EventsChronologicalSorter) sendEvents(outputChan chan<- *trace.Eve
 			}
 		} else {
 			outputChan <- extractionEvent
+			_ = met.SortOut.Increment()
+			met.SortOutLast = time.Now()
 		}
 	}
 }

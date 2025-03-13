@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"time"
 	dflt_time "time"
 	"unsafe"
 
@@ -18,7 +19,7 @@ import (
 	"github.com/aquasecurity/tracee/pkg/errfmt"
 	"github.com/aquasecurity/tracee/pkg/events"
 	"github.com/aquasecurity/tracee/pkg/logger"
-	"github.com/aquasecurity/tracee/pkg/time"
+	tt "github.com/aquasecurity/tracee/pkg/time"
 	"github.com/aquasecurity/tracee/pkg/utils"
 	"github.com/aquasecurity/tracee/types/trace"
 )
@@ -91,7 +92,8 @@ func (t *Tracee) handleEvents(ctx context.Context, initialized chan<- struct{}) 
 	// Sort stage: events go through a sorting function.
 
 	if t.config.Output.EventsSorting {
-		eventsChan, errc = t.eventsSorter.StartPipeline(ctx, eventsChan, t.config.BlobPerfBufferSize)
+		met := t.Sstats
+		eventsChan, errc = t.eventsSorter.StartPipeline(ctx, met, eventsChan, t.config.BlobPerfBufferSize)
 		errcList = append(errcList, errc)
 	}
 
@@ -131,6 +133,37 @@ func (t *Tracee) handleEvents(ctx context.Context, initialized chan<- struct{}) 
 	if err := t.WaitForPipeline(errcList...); err != nil {
 		logger.Errorw("Pipeline", "error", err)
 	}
+
+	stat := t.Sstats
+
+	fmt.Fprintf(os.Stdout, "Pipeline completed\n")
+	fmt.Fprintf(os.Stdout, "DecodeIn: %d, Last: %v\n", stat.DecodeIn.Get(), formatTimestamp(stat.DecodeInLast))
+	fmt.Fprintf(os.Stdout, "DecodeOut: %d, Last: %v\n", stat.DecodeOut.Get(), formatTimestamp(stat.DecodeOutLast))
+	fmt.Fprintf(os.Stdout, "DecodeFiltered: %d, Last: %v\n", stat.DecodeFiltered.Get(), formatTimestamp(stat.DecodeFilteredLast))
+	fmt.Fprintf(os.Stdout, "QueueIn: %d, Last: %v\n", stat.QueueIn.Get(), formatTimestamp(stat.QueueInLast))
+	fmt.Fprintf(os.Stdout, "QueueOut: %d, Last: %v\n", stat.QueueOut.Get(), formatTimestamp(stat.QueueOutLast))
+	fmt.Fprintf(os.Stdout, "SortIn: %d, Last: %v\n", stat.SortIn.Get(), formatTimestamp(stat.SortInLast))
+	fmt.Fprintf(os.Stdout, "SortOut: %d, Last: %v\n", stat.SortOut.Get(), formatTimestamp(stat.SortOutLast))
+	fmt.Fprintf(os.Stdout, "ProcessIn: %d, Last: %v\n", stat.ProcessIn.Get(), formatTimestamp(stat.ProcessInLast))
+	fmt.Fprintf(os.Stdout, "ProcessOut: %d, Last: %v\n", stat.ProcessOut.Get(), formatTimestamp(stat.ProcessOutLast))
+	fmt.Fprintf(os.Stdout, "ProcessFiltered: %d, Last: %v\n", stat.ProcessFiltered.Get(), formatTimestamp(stat.ProcessFilteredLast))
+	fmt.Fprintf(os.Stdout, "EnrichContainerIn: %d, Last: %v\n", stat.EnrichContainerIn.Get(), formatTimestamp(stat.EnrichContainerInLast))
+	fmt.Fprintf(os.Stdout, "EnrichContainerOut: %d, Last: %v\n", stat.EnrichContainerOut.Get(), formatTimestamp(stat.EnrichContainerOutLast))
+	fmt.Fprintf(os.Stdout, "DeriveIn: %d, Last: %v\n", stat.DeriveIn.Get(), formatTimestamp(stat.DeriveInLast))
+	fmt.Fprintf(os.Stdout, "DeriveOut: %d, Last: %v\n", stat.DeriveOut.Get(), formatTimestamp(stat.DeriveOutLast))
+	fmt.Fprintf(os.Stdout, "EngineIn: %d, Last: %v\n", stat.EngineIn.Get(), formatTimestamp(stat.EngineInLast))
+	fmt.Fprintf(os.Stdout, "EngineOut: %d, Last: %v\n", stat.EngineOut.Get(), formatTimestamp(stat.EngineOutLast))
+	fmt.Fprintf(os.Stdout, "EngineFiltered: %d, Last: %v\n", stat.EngineFiltered.Get(), formatTimestamp(stat.EngineFilteredLast))
+	fmt.Fprintf(os.Stdout, "SinkIn: %d, Last: %v\n", stat.SinkIn.Get(), formatTimestamp(stat.SinkInLast))
+	fmt.Fprintf(os.Stdout, "SinkOut: %d, Last: %v\n", stat.SinkOut.Get(), formatTimestamp(stat.SinkOutLast))
+	fmt.Fprintf(os.Stdout, "SinkFiltered: %d, Last: %v\n", stat.SinkFiltered.Get(), formatTimestamp(stat.SinkFilteredLast))
+}
+
+func formatTimestamp(ts time.Time) string {
+	if ts.IsZero() {
+		return "-"
+	}
+	return ts.UTC().Format("15:04:05.000000000") // Matching Python’s %H:%M:%S.%f
 }
 
 // Under some circumstances, tracee-rules might be slower to consume events than
@@ -170,7 +203,8 @@ func (t *Tracee) queueEvents(ctx context.Context, in <-chan *trace.Event) (chan 
 			case event := <-in:
 				if event != nil {
 					t.config.Cache.Enqueue(event) // may block if queue is full
-					_ = t.stats.QueueEventsCount.Increment()
+					_ = t.Sstats.QueueIn.Increment()
+					t.Sstats.QueueInLast = time.Now()
 				}
 			}
 		}
@@ -189,6 +223,8 @@ func (t *Tracee) queueEvents(ctx context.Context, in <-chan *trace.Event) (chan 
 				event := t.config.Cache.Dequeue() // may block if queue is empty
 				if event != nil {
 					out <- event
+					_ = t.Sstats.QueueOut.Increment()
+					t.Sstats.QueueOutLast = time.Now()
 				}
 			}
 		}
@@ -207,7 +243,8 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 		defer close(out)
 		defer close(errc)
 		for dataRaw := range sourceChan {
-			_ = t.stats.DecodeEvent.Increment()
+			_ = t.Sstats.DecodeIn.Increment()
+			t.Sstats.DecodeInLast = time.Now()
 			ebpfMsgDecoder := bufferdecoder.New(dataRaw)
 			var eCtx bufferdecoder.EventContext
 			if err := ebpfMsgDecoder.DecodeContext(&eCtx); err != nil {
@@ -234,7 +271,6 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 				t.handleError(err)
 				continue
 			}
-			_ = t.stats.Test1Count.Increment()
 			// Add stack trace if needed
 			var stackAddresses []uint64
 			if t.config.Output.StackAddresses {
@@ -286,10 +322,10 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 			// populate all the fields of the event used in this stage, and reset the rest
 
 			// normalize timestamp context fields for later use
-			normalizedTs := time.BootToEpochNS(eCtx.Ts)
-			normalizedThreadStartTime := time.BootToEpochNS(eCtx.StartTime)
-			normalizedLeaderStartTime := time.BootToEpochNS(eCtx.LeaderStartTime)
-			normalizedParentStartTime := time.BootToEpochNS(eCtx.ParentStartTime)
+			normalizedTs := tt.BootToEpochNS(eCtx.Ts)
+			normalizedThreadStartTime := tt.BootToEpochNS(eCtx.StartTime)
+			normalizedLeaderStartTime := tt.BootToEpochNS(eCtx.LeaderStartTime)
+			normalizedParentStartTime := tt.BootToEpochNS(eCtx.ParentStartTime)
 
 			evt.Timestamp = int(normalizedTs)
 			evt.ThreadStartTime = int(normalizedThreadStartTime)
@@ -325,7 +361,6 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 			evt.ThreadEntityId = utils.HashTaskID(eCtx.HostTid, normalizedThreadStartTime)
 			evt.ProcessEntityId = utils.HashTaskID(eCtx.HostPid, normalizedLeaderStartTime)
 			evt.ParentEntityId = utils.HashTaskID(eCtx.HostPpid, normalizedParentStartTime)
-			_ = t.stats.Test2Count.Increment()
 			// If there aren't any policies that need filtering in userland, tracee **may** skip
 			// this event, as long as there aren't any derivatives or signatures that depend on it.
 			// Some base events (derivative and signatures) might not have set related policy bit,
@@ -335,7 +370,10 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 				reqBySig := t.policyManager.IsRequiredBySignature(eventId)
 
 				if !hasDerivation && !reqBySig {
-					_ = t.stats.EventsFiltered.Increment()
+					_ = t.Sstats.DecodeFiltered.Increment()
+					t.Sstats.DecodeFilteredLast = time.Now()
+					_ = t.Sstats.EventsFiltered.Increment()
+					t.Sstats.EventsFilteredLast = time.Now()
 					t.eventsPool.Put(evt)
 					continue
 				}
@@ -343,7 +381,8 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 
 			select {
 			case out <- evt:
-				_ = t.stats.Test3Count.Increment()
+				_ = t.Sstats.DecodeOut.Increment()
+				t.Sstats.DecodeOutLast = time.Now()
 			case <-ctx.Done():
 				return
 			}
@@ -493,7 +532,8 @@ func (t *Tracee) processEvents(ctx context.Context, in <-chan *trace.Event) (
 
 		for event := range in { // For each received event...
 			// Increment the counter
-			_ = t.stats.ProcessEventsCount.Increment()
+			_ = t.Sstats.ProcessIn.Increment()
+			t.Sstats.ProcessInLast = time.Now()
 			if event == nil {
 				continue // might happen during initialization (ctrl+c seg faults)
 			}
@@ -536,6 +576,10 @@ func (t *Tracee) processEvents(ctx context.Context, in <-chan *trace.Event) (
 				utils.ClearBits(&event.MatchedPoliciesUser, policiesWithContainerFilter)
 
 				if event.MatchedPoliciesKernel == 0 {
+					_ = t.Sstats.ProcessFiltered.Increment()
+					t.Sstats.ProcessFilteredLast = time.Now()
+					_ = t.Sstats.EventsFiltered.Increment()
+					t.Sstats.EventsFilteredLast = time.Now()
 					t.eventsPool.Put(event)
 					continue
 				}
@@ -544,6 +588,8 @@ func (t *Tracee) processEvents(ctx context.Context, in <-chan *trace.Event) (
 		sendEvent:
 			select {
 			case out <- event:
+				_ = t.Sstats.ProcessOut.Increment()
+				t.Sstats.ProcessOutLast = time.Now()
 			case <-ctx.Done():
 				return
 			}
@@ -569,7 +615,8 @@ func (t *Tracee) deriveEvents(ctx context.Context, in <-chan *trace.Event) (
 		for {
 			select {
 			case event := <-in:
-				_ = t.stats.DeriveEventsCount.Increment() // Increment the counter
+				_ = t.Sstats.DeriveIn.Increment() // Increment the counter
+				t.Sstats.DeriveInLast = time.Now()
 				if event == nil {
 					continue // might happen during initialization (ctrl+c seg faults)
 				}
@@ -584,6 +631,8 @@ func (t *Tracee) deriveEvents(ctx context.Context, in <-chan *trace.Event) (
 				// to ensure the original event arguments are not modified by the derivation stage.
 				argsCopy := slices.Clone(event.Args)
 				out <- event
+				_ = t.Sstats.DeriveOut.Increment() // Increment the counter
+				t.Sstats.DeriveOutLast = time.Now()
 
 				// Note: event is being derived before any of its args are parsed.
 				derivatives, errors := t.eventDerivations.DeriveEvent(eventCopy, argsCopy)
@@ -592,6 +641,7 @@ func (t *Tracee) deriveEvents(ctx context.Context, in <-chan *trace.Event) (
 					t.handleError(err)
 				}
 
+				// Perhaps to count derivatives in and out
 				for i := range derivatives {
 					// Passing "derivative" variable here will make the ptr address always
 					// be the same as the last item. This makes the printer to print 2 or
@@ -611,7 +661,7 @@ func (t *Tracee) deriveEvents(ctx context.Context, in <-chan *trace.Event) (
 					default:
 						// Derived events might need filtering as well
 						if t.matchPolicies(event) == 0 {
-							_ = t.stats.EventsFiltered.Increment()
+							_ = t.Sstats.EventsFiltered.Increment()
 							continue
 						}
 					}
@@ -642,11 +692,15 @@ func (t *Tracee) sinkEvents(ctx context.Context, in <-chan *trace.Event) <-chan 
 			if event == nil {
 				continue // might happen during initialization (ctrl+c seg faults)
 			}
+			_ = t.Sstats.SinkIn.Increment()
+			t.Sstats.SinkInLast = time.Now()
 
 			// Is the event enabled for the policies or globally?
 			if !t.policyManager.IsEnabled(event.MatchedPoliciesUser, events.ID(event.EventID)) {
 				// TODO: create metrics from dropped events
 				t.eventsPool.Put(event)
+				_ = t.Sstats.SinkFiltered.Increment()
+				t.Sstats.SinkFilteredLast = time.Now()
 				continue
 			}
 
@@ -655,6 +709,8 @@ func (t *Tracee) sinkEvents(ctx context.Context, in <-chan *trace.Event) <-chan 
 			event.MatchedPoliciesUser = t.policyManager.MatchEvent(id, event.MatchedPoliciesUser)
 			if event.MatchedPoliciesUser == 0 {
 				t.eventsPool.Put(event)
+				_ = t.Sstats.SinkFiltered.Increment()
+				t.Sstats.SinkFilteredLast = time.Now()
 				continue
 			}
 
@@ -675,7 +731,9 @@ func (t *Tracee) sinkEvents(ctx context.Context, in <-chan *trace.Event) <-chan 
 				return
 			default:
 				t.streamsManager.Publish(ctx, *event)
-				_ = t.stats.EventCount.Increment()
+				_ = t.Sstats.SinkOut.Increment()
+				t.Sstats.SinkOutLast = time.Now()
+				_ = t.Sstats.EventCount.Increment()
 				t.eventsPool.Put(event)
 			}
 		}
@@ -764,7 +822,7 @@ func MergeErrors(cs ...<-chan error) <-chan error {
 }
 
 func (t *Tracee) handleError(err error) {
-	_ = t.stats.ErrorCount.Increment()
+	_ = t.Sstats.ErrorCount.Increment()
 	logger.Errorw("Tracee encountered an error", "error", err)
 }
 

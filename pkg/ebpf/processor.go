@@ -53,7 +53,7 @@ func (t *Tracee) processLostEvents() {
 				return // lostEvChannel is closed, lost is zero value
 			}
 
-			if err := t.stats.LostEvCount.Increment(lost); err != nil {
+			if err := t.Sstats.LostEvCount.Increment(lost); err != nil {
 				logger.Errorw("Incrementing lost event count", "error", err)
 			}
 			logger.Warnw(fmt.Sprintf("Lost %d events", lost))
