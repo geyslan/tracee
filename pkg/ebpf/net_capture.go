@@ -60,11 +60,11 @@ func (t *Tracee) processNetCapEvents(ctx context.Context, in <-chan *trace.Event
 			case event := <-in:
 				// TODO: Support captures pipeline in t.processEvent
 				t.processNetCapEvent(event)
-				_ = t.stats.NetCapCount.Increment()
+				_ = t.Sstats.NetCapCount.Increment()
 				t.eventsPool.Put(event)
 
 			case lost := <-t.lostNetCapChannel:
-				if err := t.stats.LostNtCapCount.Increment(lost); err != nil {
+				if err := t.Sstats.LostNtCapCount.Increment(lost); err != nil {
 					logger.Errorw("Incrementing lost network events count", "error", err)
 				}
 				logger.Warnw(fmt.Sprintf("Lost %d network capture events", lost))

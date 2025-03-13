@@ -3,6 +3,7 @@ package ebpf
 import (
 	gocontext "context"
 	"sync"
+	"time"
 
 	"github.com/aquasecurity/tracee/pkg/cgroup"
 	"github.com/aquasecurity/tracee/pkg/containers"
@@ -88,16 +89,19 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 		for { // enqueue events
 			select {
 			case event := <-in:
-				_ = t.stats.EnrichContainerEventsCount.Increment()
 				if event == nil {
 					continue // might happen during initialization (ctrl+c seg faults)
 				}
+				_ = t.Sstats.EnrichContainerIn.Increment()
+				t.Sstats.EnrichContainerInLast = time.Now()
 				eventID := events.ID(event.EventID)
 				// send out irrelevant events (non container or already enriched), don't skip the cgroup lifecycle events
 				if (event.Container.ID == "" || event.Container.Name != "") &&
 					eventID != events.CgroupMkdir &&
 					eventID != events.CgroupRmdir {
 					out <- event
+					_ = t.Sstats.EnrichContainerOut.Increment()
+					t.Sstats.EnrichContainerOutLast = time.Now()
 					continue
 				}
 				cgroupId := uint64(event.CgroupID)
@@ -108,16 +112,22 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 					if err != nil {
 						logger.Errorw("cgroup_mkdir event skipped enrichment: couldn't get cgroup hid", "error", err)
 						out <- event
+						_ = t.Sstats.EnrichContainerOut.Increment()
+						t.Sstats.EnrichContainerOutLast = time.Now()
 						continue
 					}
 					if !isHid {
 						out <- event
+						_ = t.Sstats.EnrichContainerOut.Increment()
+						t.Sstats.EnrichContainerOutLast = time.Now()
 						continue
 					}
 					cgroupId, err = parse.ArgVal[uint64](event.Args, "cgroup_id")
 					if err != nil {
 						logger.Errorw("cgroup_mkdir event failed to trigger enrichment: couldn't get cgroup_id", "error", err, "event_name", event.EventName)
 						out <- event
+						_ = t.Sstats.EnrichContainerOut.Increment()
+						t.Sstats.EnrichContainerOutLast = time.Now()
 						continue
 					}
 				}
@@ -190,6 +200,8 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 							}
 						}
 						out <- event
+						_ = t.Sstats.EnrichContainerOut.Increment()
+						t.Sstats.EnrichContainerOutLast = time.Now()
 					} // TODO: place a unlikely to happen error in the printer
 				}
 				bLock.RUnlock()
@@ -210,6 +222,8 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 				if err != nil {
 					logger.Errorw("cgroup_rmdir event failed to trigger enrich queue clean: couldn't get cgroup_id", "error", err, "event_name", event.EventName)
 					out <- event
+					_ = t.Sstats.EnrichContainerOut.Increment()
+					t.Sstats.EnrichContainerOutLast = time.Now()
 					continue
 				}
 				logger.Debugw("triggered enrich queue clean", "cgroup_id", cgroupId)
@@ -225,6 +239,8 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 						delete(enrichInfo, cgroupId)
 						delete(queues, cgroupId)
 						out <- event
+						_ = t.Sstats.EnrichContainerOut.Increment()
+						t.Sstats.EnrichContainerOutLast = time.Now()
 					}
 				}
 				bLock.Unlock()

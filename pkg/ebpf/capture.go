@@ -209,7 +209,7 @@ func (t *Tracee) handleFileCaptures(ctx context.Context) {
 			}
 
 		case lost := <-t.lostCapturesChannel:
-			if err := t.stats.LostWrCount.Increment(lost); err != nil {
+			if err := t.Sstats.LostWrCount.Increment(lost); err != nil {
 				logger.Errorw("Incrementing lost capture count", "error", err)
 			}
 			logger.Warnw(fmt.Sprintf("Lost %d capture events", lost))

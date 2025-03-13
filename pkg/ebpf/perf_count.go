@@ -45,8 +45,8 @@ func (t *Tracee) countPerfEventSubmissions(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			t.stats.BPFPerfEventSubmitAttemptsCount.Reset()
-			t.stats.BPFPerfEventSubmitFailuresCount.Reset()
+			t.Sstats.BPFPerfEventSubmitAttemptsCount.Reset()
+			t.Sstats.BPFPerfEventSubmitFailuresCount.Reset()
 
 			// Get the counts of each event from the BPF map
 			iter := evtsCountsBPFMap.Iterator()
@@ -62,18 +62,18 @@ func (t *Tracee) countPerfEventSubmissions(ctx context.Context) {
 				id := events.ID(key)
 				attempts := binary.LittleEndian.Uint64(value[0:8])
 				failures := binary.LittleEndian.Uint64(value[8:16])
-				t.stats.BPFPerfEventSubmitAttemptsCount.Set(id, attempts)
-				t.stats.BPFPerfEventSubmitFailuresCount.Set(id, failures)
+				t.Sstats.BPFPerfEventSubmitAttemptsCount.Set(id, attempts)
+				t.Sstats.BPFPerfEventSubmitFailuresCount.Set(id, failures)
 
 				// Update Prometheus metrics for current event
 				evtName := events.Core.GetDefinitionByID(id).GetName()
-				t.stats.BPFPerfEventSubmitAttemptsCount.GaugeVec().WithLabelValues(evtName).Set(float64(attempts))
-				t.stats.BPFPerfEventSubmitFailuresCount.GaugeVec().WithLabelValues(evtName).Set(float64(failures))
+				t.Sstats.BPFPerfEventSubmitAttemptsCount.GaugeVec().WithLabelValues(evtName).Set(float64(attempts))
+				t.Sstats.BPFPerfEventSubmitFailuresCount.GaugeVec().WithLabelValues(evtName).Set(float64(failures))
 			}
 
 			// Log the counts
-			t.stats.BPFPerfEventSubmitAttemptsCount.Log()
-			t.stats.BPFPerfEventSubmitFailuresCount.Log()
+			t.Sstats.BPFPerfEventSubmitAttemptsCount.Log()
+			t.Sstats.BPFPerfEventSubmitFailuresCount.Log()
 		}
 	}
 }

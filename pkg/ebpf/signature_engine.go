@@ -3,6 +3,7 @@ package ebpf
 import (
 	"context"
 	"slices"
+	"time"
 
 	"github.com/aquasecurity/tracee/pkg/containers"
 	"github.com/aquasecurity/tracee/pkg/dnscache"
@@ -66,15 +67,20 @@ func (t *Tracee) engineEvents(ctx context.Context, in <-chan *trace.Event) (<-ch
 
 		// feedEngine feeds an event to the rules engine
 		feedEngine := func(event *trace.Event) {
-			_ = t.stats.EngineEventsCount.Increment()
 			if event == nil {
 				return // might happen during initialization (ctrl+c seg faults)
 			}
+			_ = t.Sstats.EngineIn.Increment()
+			t.Sstats.EngineInLast = time.Now()
 
 			id := events.ID(event.EventID)
 
 			// if the event is NOT marked as submit, it is not sent to the rules engine
 			if !t.policyManager.IsEventToSubmit(id) {
+				_ = t.Sstats.EventsFiltered.Increment()
+				t.Sstats.EventsFilteredLast = time.Now()
+				_ = t.Sstats.EngineFiltered.Increment()
+				t.Sstats.EngineFilteredLast = time.Now()
 				return
 			}
 
@@ -98,7 +104,10 @@ func (t *Tracee) engineEvents(ctx context.Context, in <-chan *trace.Event) (<-ch
 			// pass the event to the sink stage, if the event is also marked as emit
 			// it will be sent to print by the sink stage
 			out <- event
+			_ = t.Sstats.EngineOut.Increment()
+			t.Sstats.EngineOutLast = time.Now()
 
+			// count engineInput events later???
 			// send the copied event to the rules engine
 			engineInput <- eventCopy.ToProtocol()
 		}
@@ -133,7 +142,7 @@ func (t *Tracee) engineEvents(ctx context.Context, in <-chan *trace.Event) (<-ch
 				}
 
 				if t.matchPolicies(event) == 0 {
-					_ = t.stats.EventsFiltered.Increment()
+					_ = t.Sstats.EventsFiltered.Increment()
 					continue
 				}
 

@@ -205,12 +205,12 @@ func (t *Tracee) processBPFLogs(ctx context.Context) {
 				"line", bpfLog.Line(),
 				"count", bpfLog.Count(),
 			)
-			if err := t.stats.BPFLogsCount.Increment(uint64(bpfLog.Count())); err != nil {
+			if err := t.Sstats.BPFLogsCount.Increment(uint64(bpfLog.Count())); err != nil {
 				logger.Errorw("Incrementing BPF logs count", "error", err)
 			}
 
 		case lost := <-t.lostBPFLogChannel:
-			if err := t.stats.LostBPFLogsCount.Increment(lost); err != nil {
+			if err := t.Sstats.LostBPFLogsCount.Increment(lost); err != nil {
 				logger.Errorw("Incrementing lost BPF logs count", "error", err)
 			}
 			logger.Warnw(fmt.Sprintf("Lost %d ebpf logs events", lost))
