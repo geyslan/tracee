@@ -228,7 +228,8 @@ Vagrant.configure("2") do |config|
     vm_config.vm.provision "shell", privileged: true, reboot: true, inline: <<-SHELL
       set -e
 
-      KERNEL_VERSION="6.2.0-1018-aws"
+      # linux-aws-6.8
+      KERNEL_VERSION="6.8.0-1024-aws"
       USER="#{vm_user}"
 
       # silence 'dpkg-preconfigure: unable to re-open stdin: No such file or directory'
