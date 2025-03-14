@@ -216,7 +216,11 @@ func (sorter *EventsChronologicalSorter) sendEvents(met *metrics.Stats, outputCh
 	for {
 		mostDelayingQueue, eventTimestamp, err := sorter.getMostDelayingEventCPUQueue()
 		if err != nil || eventTimestamp > extractionMaxTimestamp {
-			fmt.Fprintf(os.Stdout, "Error: %v, eventTimestamp > extractionMaxTimestamp %v", err, eventTimestamp > extractionMaxTimestamp)
+			if err != nil {
+				fmt.Fprintf(os.Stdout, "Error: %v\n", err)
+			} else {
+				fmt.Fprintf(os.Stdout, "eventTimestamp > extractionMaxTimestamp %v\n", eventTimestamp > extractionMaxTimestamp)
+			}
 			break
 		}
 		extractionEvent, err := mostDelayingQueue.Get()
