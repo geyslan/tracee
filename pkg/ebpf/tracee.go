@@ -1860,6 +1860,12 @@ func (t *Tracee) triggerMemDump(event trace.Event) []error {
 						continue
 					}
 				}
+				if len(symbol) == 0 {
+					// owner: system, name: read
+					// owner: system, name: write
+					fmt.Printf("owner: %s, name: %s\n", owner, name)
+					continue
+				}
 				eventHandle := t.triggerContexts.Store(event)
 				_ = t.triggerMemDumpCall(symbol[0].Address, length, uint64(eventHandle))
 			}
