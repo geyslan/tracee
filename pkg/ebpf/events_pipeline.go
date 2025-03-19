@@ -32,12 +32,12 @@ const noSyscall int32 = -1
 
 func dumpStack() {
 	// Allocate a buffer for the stack trace (1MB should be sufficient in most cases)
-	buf := make([]byte, 1<<20)
+	buf := make([]byte, 1<<21)
 	// Capture stack traces for all goroutines
 	n := runtime.Stack(buf, true)
 
 	// Open the file in append mode, create if not exists
-	f, err := os.OpenFile("e2e_results/stack.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile("/tmp/stack.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Printf("Error opening file: %v\n", err)
 		return
@@ -243,6 +243,10 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 		defer close(out)
 		defer close(errc)
 		for dataRaw := range sourceChan {
+			if dataRaw == nil {
+				continue // might happen during initialization (ctrl+c seg faults)
+			}
+			logger.Infow("DecodeIn", "in_len", len(sourceChan))
 			_ = t.Sstats.DecodeIn.Increment()
 			t.Sstats.DecodeInLast = time.Now()
 			ebpfMsgDecoder := bufferdecoder.New(dataRaw)
@@ -370,6 +374,7 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 				reqBySig := t.policyManager.IsRequiredBySignature(eventId)
 
 				if !hasDerivation && !reqBySig {
+					logger.Infow("DecodeFiltered")
 					_ = t.Sstats.DecodeFiltered.Increment()
 					t.Sstats.DecodeFilteredLast = time.Now()
 					_ = t.Sstats.EventsFiltered.Increment()
@@ -381,6 +386,7 @@ func (t *Tracee) decodeEvents(ctx context.Context, sourceChan chan []byte) (<-ch
 
 			select {
 			case out <- evt:
+				logger.Infow("DecodeOut", "out_len", len(out))
 				_ = t.Sstats.DecodeOut.Increment()
 				t.Sstats.DecodeOutLast = time.Now()
 			case <-ctx.Done():
@@ -532,11 +538,12 @@ func (t *Tracee) processEvents(ctx context.Context, in <-chan *trace.Event) (
 
 		for event := range in { // For each received event...
 			// Increment the counter
-			_ = t.Sstats.ProcessIn.Increment()
-			t.Sstats.ProcessInLast = time.Now()
 			if event == nil {
 				continue // might happen during initialization (ctrl+c seg faults)
 			}
+			logger.Infow("ProcessIn", "in_len", len(in))
+			_ = t.Sstats.ProcessIn.Increment()
+			t.Sstats.ProcessInLast = time.Now()
 
 			// Go through event processors if needed
 			errs := t.processEvent(event)
@@ -576,6 +583,7 @@ func (t *Tracee) processEvents(ctx context.Context, in <-chan *trace.Event) (
 				utils.ClearBits(&event.MatchedPoliciesUser, policiesWithContainerFilter)
 
 				if event.MatchedPoliciesKernel == 0 {
+					logger.Infow("ProcessFiltered")
 					_ = t.Sstats.ProcessFiltered.Increment()
 					t.Sstats.ProcessFilteredLast = time.Now()
 					_ = t.Sstats.EventsFiltered.Increment()
@@ -588,6 +596,7 @@ func (t *Tracee) processEvents(ctx context.Context, in <-chan *trace.Event) (
 		sendEvent:
 			select {
 			case out <- event:
+				logger.Infow("ProcessOut", "out_len", len(out))
 				_ = t.Sstats.ProcessOut.Increment()
 				t.Sstats.ProcessOutLast = time.Now()
 			case <-ctx.Done():
@@ -615,11 +624,12 @@ func (t *Tracee) deriveEvents(ctx context.Context, in <-chan *trace.Event) (
 		for {
 			select {
 			case event := <-in:
-				_ = t.Sstats.DeriveIn.Increment() // Increment the counter
-				t.Sstats.DeriveInLast = time.Now()
 				if event == nil {
 					continue // might happen during initialization (ctrl+c seg faults)
 				}
+				logger.Infow("DeriveIn", "in_len", len(in))
+				_ = t.Sstats.DeriveIn.Increment() // Increment the counter
+				t.Sstats.DeriveInLast = time.Now()
 
 				// Get a copy of our event before sending it down the pipeline. This is
 				// needed because later modification of the event (in particular of the
@@ -631,6 +641,7 @@ func (t *Tracee) deriveEvents(ctx context.Context, in <-chan *trace.Event) (
 				// to ensure the original event arguments are not modified by the derivation stage.
 				argsCopy := slices.Clone(event.Args)
 				out <- event
+				logger.Infow("DeriveOut", "out_len", len(out))
 				_ = t.Sstats.DeriveOut.Increment() // Increment the counter
 				t.Sstats.DeriveOutLast = time.Now()
 
@@ -643,6 +654,7 @@ func (t *Tracee) deriveEvents(ctx context.Context, in <-chan *trace.Event) (
 
 				// Perhaps to count derivatives in and out
 				for i := range derivatives {
+					logger.Infow("DerivativeIn")
 					// Passing "derivative" variable here will make the ptr address always
 					// be the same as the last item. This makes the printer to print 2 or
 					// 3 times the last event, instead of printing all derived events
@@ -661,6 +673,7 @@ func (t *Tracee) deriveEvents(ctx context.Context, in <-chan *trace.Event) (
 					default:
 						// Derived events might need filtering as well
 						if t.matchPolicies(event) == 0 {
+							logger.Infow("DerivativeFiltered")
 							_ = t.Sstats.EventsFiltered.Increment()
 							continue
 						}
@@ -669,6 +682,7 @@ func (t *Tracee) deriveEvents(ctx context.Context, in <-chan *trace.Event) (
 					// Process derived events
 					t.processEvent(event)
 					out <- event
+					logger.Infow("DerivativeOut", "out_len", len(out))
 				}
 			case <-ctx.Done():
 				return
@@ -692,6 +706,7 @@ func (t *Tracee) sinkEvents(ctx context.Context, in <-chan *trace.Event) <-chan 
 			if event == nil {
 				continue // might happen during initialization (ctrl+c seg faults)
 			}
+			logger.Infow("SinkIn", "in_len", len(in))
 			_ = t.Sstats.SinkIn.Increment()
 			t.Sstats.SinkInLast = time.Now()
 
@@ -701,6 +716,7 @@ func (t *Tracee) sinkEvents(ctx context.Context, in <-chan *trace.Event) <-chan 
 				t.eventsPool.Put(event)
 				_ = t.Sstats.SinkFiltered.Increment()
 				t.Sstats.SinkFilteredLast = time.Now()
+				logger.Infow("SinkFiltered")
 				continue
 			}
 
@@ -711,6 +727,7 @@ func (t *Tracee) sinkEvents(ctx context.Context, in <-chan *trace.Event) <-chan 
 				t.eventsPool.Put(event)
 				_ = t.Sstats.SinkFiltered.Increment()
 				t.Sstats.SinkFilteredLast = time.Now()
+				logger.Infow("SinkFiltered")
 				continue
 			}
 
@@ -735,6 +752,7 @@ func (t *Tracee) sinkEvents(ctx context.Context, in <-chan *trace.Event) <-chan 
 				t.Sstats.SinkOutLast = time.Now()
 				_ = t.Sstats.EventCount.Increment()
 				t.eventsPool.Put(event)
+				logger.Infow("SinkOut")
 			}
 		}
 	}()

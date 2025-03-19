@@ -101,9 +101,7 @@ package sorting
 
 import (
 	gocontext "context"
-	"fmt"
 	"math"
-	"os"
 	"sync"
 	"time"
 
@@ -181,6 +179,7 @@ func (sorter *EventsChronologicalSorter) Start(
 				return
 			}
 			sorter.addEvent(met, newEvent)
+			logger.Infow("SortIn", "in_len", len(in))
 		case <-ticker.C:
 			sorter.updateSavedTimestamps()
 			if len(sorter.extractionSavedTimestamps) > sorter.intervalsAmountThresholdForDelay {
@@ -215,14 +214,14 @@ func (sorter *EventsChronologicalSorter) sendEvents(met *metrics.Stats, outputCh
 	defer sorter.outputChanMutex.Unlock()
 	for {
 		mostDelayingQueue, eventTimestamp, err := sorter.getMostDelayingEventCPUQueue()
-		if err != nil || eventTimestamp > extractionMaxTimestamp {
-			if err != nil {
-				fmt.Fprintf(os.Stdout, "Error: %v\n", err)
-			} else {
-				fmt.Fprintf(os.Stdout, "eventTimestamp > extractionMaxTimestamp %v\n", eventTimestamp > extractionMaxTimestamp)
-			}
-			break
-		}
+		// if err != nil || eventTimestamp > extractionMaxTimestamp {
+		// 	if err != nil {
+		// 		fmt.Fprintf(os.Stdout, "Error: %v\n", err)
+		// 	} else {
+		// 		fmt.Fprintf(os.Stdout, "eventTimestamp > extractionMaxTimestamp %v\n", eventTimestamp > extractionMaxTimestamp)
+		// 	}
+		// 	break
+		// }
 		extractionEvent, err := mostDelayingQueue.Get()
 		if err != nil {
 			sorter.errorChan <- err
@@ -241,6 +240,7 @@ func (sorter *EventsChronologicalSorter) sendEvents(met *metrics.Stats, outputCh
 			outputChan <- extractionEvent
 			_ = met.SortOut.Increment()
 			met.SortOutLast = time.Now()
+			logger.Infow("SortOut", "out_len", len(outputChan))
 		}
 	}
 }

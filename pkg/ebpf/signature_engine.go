@@ -70,6 +70,7 @@ func (t *Tracee) engineEvents(ctx context.Context, in <-chan *trace.Event) (<-ch
 			if event == nil {
 				return // might happen during initialization (ctrl+c seg faults)
 			}
+			logger.Infow("EngineIn", "in_len", len(in))
 			_ = t.Sstats.EngineIn.Increment()
 			t.Sstats.EngineInLast = time.Now()
 
@@ -81,6 +82,7 @@ func (t *Tracee) engineEvents(ctx context.Context, in <-chan *trace.Event) (<-ch
 				t.Sstats.EventsFilteredLast = time.Now()
 				_ = t.Sstats.EngineFiltered.Increment()
 				t.Sstats.EngineFilteredLast = time.Now()
+				logger.Infow("EngineFiltered")
 				return
 			}
 
@@ -106,10 +108,12 @@ func (t *Tracee) engineEvents(ctx context.Context, in <-chan *trace.Event) (<-ch
 			out <- event
 			_ = t.Sstats.EngineOut.Increment()
 			t.Sstats.EngineOutLast = time.Now()
+			logger.Infow("EngineOut", "out_len", len(out))
 
 			// count engineInput events later???
 			// send the copied event to the rules engine
 			engineInput <- eventCopy.ToProtocol()
+			// logger.Infow("EngineProtocolIn", "in_len", len(engineInput))
 		}
 
 		for {
@@ -134,6 +138,7 @@ func (t *Tracee) engineEvents(ctx context.Context, in <-chan *trace.Event) (<-ch
 				if finding.Event.Payload == nil {
 					continue // might happen during initialization (ctrl+c seg faults)
 				}
+				logger.Infow("EngineFindingIn", "in_len", len(engineOutput))
 
 				event, err := findings.FindingToEvent(finding)
 				if err != nil {
@@ -143,10 +148,12 @@ func (t *Tracee) engineEvents(ctx context.Context, in <-chan *trace.Event) (<-ch
 
 				if t.matchPolicies(event) == 0 {
 					_ = t.Sstats.EventsFiltered.Increment()
+					logger.Infow("EngineFindingFiltered")
 					continue
 				}
 
 				engineOutputEvents <- event
+				logger.Infow("EngineFindingOut", "out_len", len(engineOutputEvents))
 			case <-ctx.Done():
 				return
 			}

@@ -94,6 +94,7 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 				}
 				_ = t.Sstats.EnrichContainerIn.Increment()
 				t.Sstats.EnrichContainerInLast = time.Now()
+				logger.Infow("EnrichContainerIn", "in_len", len(in))
 				eventID := events.ID(event.EventID)
 				// send out irrelevant events (non container or already enriched), don't skip the cgroup lifecycle events
 				if (event.Container.ID == "" || event.Container.Name != "") &&
@@ -102,6 +103,7 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 					out <- event
 					_ = t.Sstats.EnrichContainerOut.Increment()
 					t.Sstats.EnrichContainerOutLast = time.Now()
+					logger.Infow("EnrichContainerOut", "out_len", len(out))
 					continue
 				}
 				cgroupId := uint64(event.CgroupID)
@@ -114,12 +116,14 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 						out <- event
 						_ = t.Sstats.EnrichContainerOut.Increment()
 						t.Sstats.EnrichContainerOutLast = time.Now()
+						logger.Infow("EnrichContainerOut", "out_len", len(out))
 						continue
 					}
 					if !isHid {
 						out <- event
 						_ = t.Sstats.EnrichContainerOut.Increment()
 						t.Sstats.EnrichContainerOutLast = time.Now()
+						logger.Infow("EnrichContainerOut", "out_len", len(out))
 						continue
 					}
 					cgroupId, err = parse.ArgVal[uint64](event.Args, "cgroup_id")
@@ -128,6 +132,7 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 						out <- event
 						_ = t.Sstats.EnrichContainerOut.Increment()
 						t.Sstats.EnrichContainerOutLast = time.Now()
+						logger.Infow("EnrichContainerOut", "out_len", len(out))
 						continue
 					}
 				}
@@ -202,6 +207,7 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 						out <- event
 						_ = t.Sstats.EnrichContainerOut.Increment()
 						t.Sstats.EnrichContainerOutLast = time.Now()
+						logger.Infow("EnrichContainerOut", "out_len", len(out))
 					} // TODO: place a unlikely to happen error in the printer
 				}
 				bLock.RUnlock()
@@ -224,6 +230,7 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 					out <- event
 					_ = t.Sstats.EnrichContainerOut.Increment()
 					t.Sstats.EnrichContainerOutLast = time.Now()
+					logger.Infow("EnrichContainerOut", "out_len", len(out))
 					continue
 				}
 				logger.Debugw("triggered enrich queue clean", "cgroup_id", cgroupId)
@@ -241,6 +248,7 @@ func (t *Tracee) enrichContainerEvents(ctx gocontext.Context, in <-chan *trace.E
 						out <- event
 						_ = t.Sstats.EnrichContainerOut.Increment()
 						t.Sstats.EnrichContainerOutLast = time.Now()
+						logger.Infow("EnrichContainerOut", "out_len", len(out))
 					}
 				}
 				bLock.Unlock()
