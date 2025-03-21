@@ -31,8 +31,8 @@ const maxStackDepth int = 20
 const noSyscall int32 = -1
 
 func dumpStack() {
-	// Allocate a buffer for the stack trace (1MB should be sufficient in most cases)
-	buf := make([]byte, 1<<20)
+	// Allocate a buffer for the stack trace (2MB should be sufficient in most cases)
+	buf := make([]byte, 1<<21)
 	// Capture stack traces for all goroutines
 	n := runtime.Stack(buf, true)
 
@@ -72,7 +72,7 @@ func (t *Tracee) handleEvents(ctx context.Context, initialized chan<- struct{}) 
 	go func() {
 		for {
 			dumpStack()
-			dflt_time.Sleep(10 * dflt_time.Second)
+			dflt_time.Sleep(5 * dflt_time.Second)
 		}
 	}()
 	var errcList []<-chan error
