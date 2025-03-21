@@ -605,7 +605,9 @@ func (t *Tracee) processEvents(ctx context.Context, in <-chan *trace.Event) (
 func (t *Tracee) deriveEvents(ctx context.Context, in <-chan *trace.Event) (
 	<-chan *trace.Event, <-chan error,
 ) {
-	out := make(chan *trace.Event, t.config.PipelineChannelSize)
+	outChanSize := t.config.PipelineChannelSize
+	// outChanSize = int(float64(chanSize) * 1.5)
+	out := make(chan *trace.Event, outChanSize)
 	errc := make(chan error, 1)
 
 	go func() {
