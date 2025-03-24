@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/aquasecurity/tracee/pkg/events/findings"
 	"github.com/aquasecurity/tracee/pkg/logger"
@@ -85,13 +86,86 @@ func NewEngine(config Config, sources EventSources, output chan *detect.Finding)
 	return &engine, nil
 }
 
+type EventStats struct {
+	mu     sync.RWMutex
+	events map[string]*EventTiming
+}
+
+type EventTiming struct {
+	CountIn   int
+	CountOut  int
+	TotalTime time.Duration
+	MaxTime   time.Duration
+	lastIn    time.Time
+}
+
+func NewEventStats() *EventStats {
+	return &EventStats{
+		events: make(map[string]*EventTiming),
+	}
+}
+
+func (es *EventStats) HitIn(eventName string) {
+	es.mu.Lock()
+	defer es.mu.Unlock()
+
+	et, exists := es.events[eventName]
+	if !exists {
+		et = &EventTiming{}
+		es.events[eventName] = et
+	}
+
+	et.CountIn++
+	et.lastIn = time.Now()
+}
+
+func (es *EventStats) HitOut(eventName string) {
+	es.mu.Lock()
+	defer es.mu.Unlock()
+
+	et, exists := es.events[eventName]
+	if !exists || et.lastIn.IsZero() {
+		return
+	}
+
+	et.CountOut++
+	duration := time.Since(et.lastIn)
+	et.TotalTime += duration
+
+	if duration > et.MaxTime {
+		et.MaxTime = duration
+	}
+
+	et.lastIn = time.Time{}
+}
+
+func (es *EventStats) Map() map[string]*EventTiming {
+	es.mu.RLock()
+	defer es.mu.RUnlock()
+
+	res := make(map[string]*EventTiming, len(es.events))
+	for k, v := range es.events {
+		res[k] = v
+	}
+	return res
+}
+
+func (et *EventTiming) AverageTime() time.Duration {
+	return et.TotalTime / time.Duration(et.CountOut)
+}
+
+var sigMap = NewEventStats()
+
 // signatureStart is the signature handling business logics.
 func signatureStart(signature detect.Signature, c chan protocol.Event, wg *sync.WaitGroup) {
+	meta, _ := signature.GetMetadata()
 	for e := range c {
+		sigMap.HitIn(meta.EventName)
 		if err := signature.OnEvent(e); err != nil {
 			meta, _ := signature.GetMetadata()
 			logger.Errorw("Handling event by signature " + meta.Name + ": " + err.Error())
 		}
+		sigMap.HitOut(meta.EventName)
 	}
 	wg.Done()
 }
@@ -259,6 +333,13 @@ func (engine *Engine) consumeSources(ctx context.Context) {
 
 drain:
 	// drain and process all remaining events
+	for sig, v := range sigMap.Map() {
+		fmt.Printf("Signature %s: %d in, %d out, avg time %v, max time %v\n", sig, v.CountIn, v.CountOut, v.AverageTime().Nanoseconds(), v.MaxTime.Nanoseconds())
+		if v.CountIn != v.CountOut {
+			fmt.Printf("  WARNING: Signature %s In-Out mismatch\n", sig)
+		}
+	}
+
 	for {
 		select {
 		case event := <-engine.inputs.Tracee:
