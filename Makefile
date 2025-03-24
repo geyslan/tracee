@@ -499,7 +499,7 @@ $(OUTPUT_DIR)/tracee: \
 	$(MAKE) btfhub
 	$(GO_ENV_EBPF) $(CMD_GO) build \
 		-tags $(GO_TAGS_EBPF) \
-		-gcflags="all=-N -l" \
+		-gcflags="all=-N" \
 		-ldflags="$(GO_DEBUG_FLAG) \
 			-extldflags \"$(CGO_EXT_LDFLAGS_EBPF)\" \
 			-X github.com/aquasecurity/tracee/pkg/version.version=$(VERSION) \
@@ -565,6 +565,7 @@ $(OUTPUT_DIR)/tracee-rules: \
 #
 	$(GO_ENV_EBPF) $(CMD_GO) build \
 		-tags $(GO_TAGS_RULES) \
+		-gcflags="all=-N" \
 		-ldflags="$(GO_DEBUG_FLAG) \
 			-extldflags \"$(CGO_EXT_LDFLAGS_RULES)\" \
 			" \
@@ -600,7 +601,6 @@ $(OUTPUT_DIR)/signatures: \
 #
 	$(CMD_MKDIR) -p $@
 	$(GO_ENV_EBPF) $(CMD_GO) build \
-		-gcflags="all=-N -l" \
 		--buildmode=plugin \
 		-o $@/builtin.so \
 		$(GOSIGNATURES_SRC)
