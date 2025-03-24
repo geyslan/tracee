@@ -278,7 +278,18 @@ func (engine *Engine) dispatchEvent(s detect.Signature, event protocol.Event) {
 		}
 	}
 
-	engine.signatures[s] <- event
+	select {
+	case engine.signatures[s] <- event:
+	default:
+		chanLen := len(engine.signatures[s])
+		eventName := event.Selector().Name
+		sigMetadata, err := s.GetMetadata()
+		if err != nil {
+			logger.Errorw(fmt.Sprintf("event %s not dispatched to signature (chanLen=%d): metadata error %v", eventName, chanLen, err))
+			return
+		}
+		logger.Errorw(fmt.Sprintf("event %s not dispatched to signature %s: channel full (chanLen=%d)", event.Selector().Name, sigMetadata.EventName, chanLen))
+	}
 }
 
 func (engine *Engine) filterDispatchInPipeline(s detect.Signature, event protocol.Event) bool {
