@@ -41,7 +41,7 @@ func (t *Tracee) countPerfEventSubmissions(ctx context.Context) {
 		}
 	}
 
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {

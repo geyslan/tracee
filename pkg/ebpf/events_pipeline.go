@@ -72,7 +72,7 @@ func (t *Tracee) handleEvents(ctx context.Context, initialized chan<- struct{}) 
 	go func() {
 		for {
 			dumpStack()
-			dflt_time.Sleep(5 * dflt_time.Second)
+			dflt_time.Sleep(1 * dflt_time.Second)
 		}
 	}()
 	var errcList []<-chan error
