@@ -97,6 +97,7 @@ type EventTiming struct {
 	TotalTime time.Duration
 	MaxTime   time.Duration
 	lastIn    time.Time
+	lastOut   time.Time
 }
 
 func NewEventStats() *EventStats {
@@ -120,6 +121,8 @@ func (es *EventStats) HitIn(eventName string) {
 }
 
 func (es *EventStats) HitOut(eventName string) {
+	lastOut := time.Now()
+
 	es.mu.Lock()
 	defer es.mu.Unlock()
 
@@ -128,15 +131,15 @@ func (es *EventStats) HitOut(eventName string) {
 		return
 	}
 
-	et.CountOut++
-	duration := time.Since(et.lastIn)
+	et.lastOut = lastOut
+	duration := et.lastOut.Sub(et.lastIn)
 	et.TotalTime += duration
+
+	et.CountOut++
 
 	if duration > et.MaxTime {
 		et.MaxTime = duration
 	}
-
-	et.lastIn = time.Time{}
 }
 
 func (es *EventStats) Map() map[string]*EventTiming {
@@ -333,11 +336,36 @@ func (engine *Engine) consumeSources(ctx context.Context) {
 
 drain:
 	// drain and process all remaining events
+	fmt.Printf("\nDumping signatures metrics at %v\n", time.Now().UnixNano())
 	for sig, v := range sigMap.Map() {
-		fmt.Printf("Signature %s: %d in, %d out, avg time %v, max time %v\n", sig, v.CountIn, v.CountOut, v.AverageTime().Nanoseconds(), v.MaxTime.Nanoseconds())
+		fmt.Printf("%s: %d in, %d out, avg time %v ns, max time %v ns, lastIn %v ns, lastOut %v ns, lastDiff %v ns\n",
+			sig,
+			v.CountIn,
+			v.CountOut,
+			v.AverageTime().Nanoseconds(),
+			v.MaxTime.Nanoseconds(),
+			v.lastIn.UnixNano(),
+			v.lastOut.UnixNano(),
+			v.lastIn.Sub(v.lastOut).Nanoseconds(),
+		)
 		if v.CountIn != v.CountOut {
-			fmt.Printf("  WARNING: Signature %s In-Out mismatch\n", sig)
+			fmt.Printf("  WARNING: %s In-Out mismatch\n", sig)
 		}
+		if v.lastIn.After(v.lastOut) {
+			fmt.Printf("  WARNING: %s lastIn - lastOut: %v ns\n", sig, v.lastIn.Sub(v.lastOut).Nanoseconds())
+		}
+	}
+
+	fmt.Printf("\nDumping dispatch metrics at %v\n", time.Now().UnixNano())
+	for sig, v := range dispatchStats.Map() {
+		fmt.Printf("%s: %d dispatched, %d dropped, lastDispatched %v ns, lastDropped %v ns, lastChannelLen %d\n",
+			sig,
+			v.Dispatched,
+			v.Dropped,
+			v.LastDispatched.UnixNano(),
+			v.LastDropped.UnixNano(),
+			v.LastChannelLen,
+		)
 	}
 
 	for {
@@ -351,6 +379,70 @@ drain:
 	}
 }
 
+type DispatchStats struct {
+	mu sync.RWMutex
+	m  map[string]*SigStats
+}
+
+type SigStats struct {
+	Dropped        uint64
+	Dispatched     uint64
+	LastDropped    time.Time
+	LastDispatched time.Time
+	LastChannelLen int
+}
+
+func NewDispatchStats() *DispatchStats {
+	return &DispatchStats{
+		m: make(map[string]*SigStats),
+	}
+}
+
+var dispatchStats = NewDispatchStats()
+
+func (ds *DispatchStats) HitDropped(sigName string, chanLen int) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
+	ss, exists := ds.m[sigName]
+	if !exists {
+		ss = &SigStats{}
+		ds.m[sigName] = ss
+	}
+
+	ss.LastChannelLen = chanLen
+	ss.Dropped++
+	ss.LastDropped = time.Now()
+}
+
+func (ds *DispatchStats) HitDispatched(sigName string, chanLen int) {
+	lastDispatched := time.Now()
+
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
+	ss, exists := ds.m[sigName]
+	if !exists {
+		return
+	}
+
+	ss.LastChannelLen = chanLen
+	ss.Dispatched++
+	ss.LastDispatched = lastDispatched
+}
+
+func (ds *DispatchStats) Map() map[string]*SigStats {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+
+	res := make(map[string]*SigStats, len(ds.m))
+	for k, v := range ds.m {
+		res[k] = v
+	}
+
+	return res
+}
+
 func (engine *Engine) dispatchEvent(s detect.Signature, event protocol.Event) {
 	if engine.config.Enabled {
 		// Do this test only if engine runs as part of the event pipeline
@@ -359,17 +451,15 @@ func (engine *Engine) dispatchEvent(s detect.Signature, event protocol.Event) {
 		}
 	}
 
+	sigMetadata, _ := s.GetMetadata()
+	sigName := sigMetadata.EventName
+	chanLen := len(engine.signatures[s])
+
 	select {
 	case engine.signatures[s] <- event:
+		dispatchStats.HitDispatched(sigName, chanLen)
 	default:
-		chanLen := len(engine.signatures[s])
-		eventName := event.Selector().Name
-		sigMetadata, err := s.GetMetadata()
-		if err != nil {
-			logger.Errorw(fmt.Sprintf("event %s not dispatched to signature (chanLen=%d): metadata error %v", eventName, chanLen, err))
-			return
-		}
-		logger.Errorw(fmt.Sprintf("event %s not dispatched to signature %s: channel full (chanLen=%d)", event.Selector().Name, sigMetadata.EventName, chanLen))
+		dispatchStats.HitDropped(sigName, chanLen)
 	}
 }
 
