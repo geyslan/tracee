@@ -183,8 +183,8 @@ require (
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.76 // indirect
 )
 
-replace github.com/aquasecurity/tracee/types => ./types
+replace github.com/aquasecurity/tracee/types => github.com/geyslan/tracee/types v0.0.0-20250506185702-7e8fac1d42a4
 
-replace github.com/aquasecurity/tracee/signatures/helpers => ./signatures/helpers
+replace github.com/aquasecurity/tracee/signatures/helpers => github.com/geyslan/tracee/signatures/helpers v0.0.0-20250506190114-c156459c11ad
 
-replace github.com/aquasecurity/tracee/api => ./api
+replace github.com/aquasecurity/tracee/api => github.com/geyslan/tracee/api v0.0.0-20250506185702-7e8fac1d42a4

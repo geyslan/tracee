@@ -106,6 +106,12 @@ github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S
 github.com/fsnotify/fsnotify v1.9.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/fxamacker/cbor/v2 v2.8.0 h1:fFtUGXUzXPHTIUdne5+zzMPTfffl3RD5qYnkY40vtxU=
 github.com/fxamacker/cbor/v2 v2.8.0/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
+github.com/geyslan/tracee/api v0.0.0-20250506185702-7e8fac1d42a4 h1:DETX88rfm91zjrA18K/19mjoD035x69VPj/wngL94no=
+github.com/geyslan/tracee/api v0.0.0-20250506185702-7e8fac1d42a4/go.mod h1:8y+5AzC6fUo7d5JKfwkrsu3wLGBB+ygVnU/h2M7FCEI=
+github.com/geyslan/tracee/signatures/helpers v0.0.0-20250506190114-c156459c11ad h1:3aeNbxiHk5fZtisTnbub9zJ/Dn+7KwlXjXY4hjCX0CM=
+github.com/geyslan/tracee/signatures/helpers v0.0.0-20250506190114-c156459c11ad/go.mod h1:AIaP2sejwUoAOu1p/XDJNhCLRG5FVROvwYXH62qqN5c=
+github.com/geyslan/tracee/types v0.0.0-20250506185702-7e8fac1d42a4 h1:yWp8/hsDMOlAqByxkY5EnIJo6dR20ECLrAhT5EnUlSQ=
+github.com/geyslan/tracee/types v0.0.0-20250506185702-7e8fac1d42a4/go.mod h1:Garhl9pem8cnEgD0iHHwGcHn2HD5dteENk3YcOBPYU4=
 github.com/go-ini/ini v1.67.0 h1:z6ZrTEZqSWOTyH2FlglNbNgARyHG8oLW9gMELqKr06A=
 github.com/go-ini/ini v1.67.0/go.mod h1:ByCAeIL28uOIIG0E3PJtZPDL8WnHpFKFOtgjp+3Ies8=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
