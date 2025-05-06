@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	gogpt "github.com/sashabaranov/go-gpt3"
+	gogpt "github.com/sashabaranov/go-openai"
 	"gopkg.in/yaml.v2"
 
 	"github.com/aquasecurity/tracee/pkg/events"
@@ -221,7 +221,7 @@ given syscall. The template for this markdown file is the following:
 	evtChannel := gogpt.NewClient(r.OpenAIKey)
 
 	req := gogpt.CompletionRequest{
-		Model:       gogpt.GPT3TextDavinci003,
+		Model:       gogpt.GPT3Dot5TurboInstruct,
 		MaxTokens:   r.OpenAIMaxTokens,
 		Temperature: float32(r.OpenAITemperature),
 		Prompt:      reqStr,
