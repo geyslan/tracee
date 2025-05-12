@@ -17,7 +17,9 @@ TARGET_REF="HEAD"
 FETCH_DEPTH=""
 FORCE_FETCH=0
 
-# help text
+# print_help displays usage information.
+# Usage:
+#   print_help
 print_help() {
     cat <<EOF
 Usage: $0 [OPTIONS]
@@ -72,62 +74,44 @@ while [ "$#" -gt 0 ]; do
         print_help
         exit 0
         ;;
-    *) die "Unknown argument: $1" ;;
+    *)
+        die "Unknown argument: $1"
+        ;;
     esac
     shift
 done
 
-if [ -z "$BASE_REF" ]; then
-    BASE_REF="$BASE_REMOTE/$BASE_BRANCH"
-fi
+#
+# script start
+#
 
 require_cmds git basename grep sed xargs
 
+[ -z "$BASE_REF" ] && BASE_REF="$BASE_REMOTE/$BASE_BRANCH"
+
 print_script_start "Comparing changes from $BASE_REF to $TARGET_REF"
 
-# determine whether to fetch
-FETCH_NEEDED=0
-[ -n "$FETCH_DEPTH" ] && FETCH_NEEDED=1
-[ "$FORCE_FETCH" -eq 1 ] && FETCH_NEEDED=1
-
 # conditional fetch
-if [ "$FETCH_NEEDED" -eq 1 ]; then
+if [ -n "$FETCH_DEPTH" ] || [ "$FORCE_FETCH" -eq 1 ]; then
     [ -n "$FETCH_DEPTH" ] && depth_arg="--depth=$FETCH_DEPTH" || depth_arg=""
     info "Fetching '$BASE_BRANCH' from '$BASE_REMOTE'${depth_arg:+ with $depth_arg}"
     git fetch "$BASE_REMOTE" "$BASE_BRANCH" "$depth_arg"
 fi
 
-# perform git diff
-md_files=$(git diff --name-only "$BASE_REF..$TARGET_REF" -- 'docs/docs/flags/*.1.md')
-man_files=$(git diff --name-only "$BASE_REF..$TARGET_REF" -- 'docs/man/*.1')
+md_files=$(git_changed_files "$BASE_REF" "$TARGET_REF" 'docs/docs/flags/*.1.md')
+man_files=$(git_changed_files "$BASE_REF" "$TARGET_REF" 'docs/man/*.1')
 
-# extract basenames
-md_basenames=$(echo "$md_files" | xargs -n 1 basename 2>/dev/null | sed 's/\.1\.md$//')
-man_basenames=$(echo "$man_files" | xargs -n 1 basename 2>/dev/null | sed 's/\.1$//')
+md_basenames=$(basename_strip_ext "$md_files" '1.md')
+man_basenames=$(basename_strip_ext "$man_files" '1')
 
-# validate consistency
-missing_updates=""
-
-for name in $md_basenames; do
-    echo "$man_basenames" | grep -qx "$name" || missing_updates="${missing_updates}${name}.1.md change requires corresponding ${name}.1 change
-"
-done
-
-for name in $man_basenames; do
-    echo "$md_basenames" | grep -qx "$name" || missing_updates="${missing_updates}${name}.1 change requires corresponding ${name}.1.md change
-"
-done
+missing_updates=$(list_diff "$md_basenames" "$man_basenames")
 
 if [ -n "$missing_updates" ]; then
     error "Documentation Mismatch"
 
-    old_ifs="$IFS"
-    IFS='
-'
-    for line in $missing_updates; do
-        [ -n "$line" ] && error " - $line"
+    printf "%s\n" "$missing_updates" | while IFS= read -r file; do
+        [ -n "$file" ] && error " - $file.1.md change requires corresponding $file.1 change"
     done
-    IFS="$old_ifs"
 
     error
 
