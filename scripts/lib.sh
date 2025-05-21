@@ -93,7 +93,7 @@ __setup_timestamp() {
 #   __log "INFO" "This is an informational message."
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [lib.sh] [INFO] This is an informational message.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [lib.sh] [INFO] This is an informational message.
 __log() {
     __log_timestamp="$(get_timestamp)"
 
@@ -118,7 +118,7 @@ __log() {
 #   __debug "This is a debug message."
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [lib.sh] [DEBUG] This is a debug message.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [lib.sh] [DEBUG] This is a debug message.
 __debug() {
     if [ "$DEBUG" -eq 0 ]; then
         return 0
@@ -142,7 +142,7 @@ __debug() {
 #   __error "This is an error message."
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [lib.sh] [ERROR] This is an error message.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [lib.sh] [ERROR] This is an error message.
 __error() {
     __log "ERROR" "$@" || {
         status=$?
@@ -162,7 +162,7 @@ __error() {
 #   __info "This is an informational message."
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [lib.sh] [INFO] This is an informational message.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [lib.sh] [INFO] This is an informational message.
 __info() {
     __log "INFO" "$@" || {
         status=$?
@@ -182,7 +182,7 @@ __info() {
 #   __warn "This is a warning message."
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [lib.sh] [WARN] This is a warning message.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [lib.sh] [WARN] This is a warning message.
 __warn() {
     __log "WARN" "$@" || {
         status=$?
@@ -292,7 +292,7 @@ get_timestamp() {
 #   log "INFO" "This is an informational message."
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [INFO] This is an informational message.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [INFO] This is an informational message.
 log() {
     log_level="$1"
     if [ -z "$log_level" ]; then
@@ -315,7 +315,7 @@ log() {
 #   debug "This is a debug message."
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [DEBUG] This is a debug message.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [DEBUG] This is a debug message.
 debug() {
     if [ "$DEBUG" -eq 0 ]; then
         return 0
@@ -339,7 +339,7 @@ debug() {
 #   info "This is an informational message."
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [INFO] This is an informational message.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [INFO] This is an informational message.
 info() {
     log "INFO" "$@" || {
         status=$?
@@ -359,7 +359,7 @@ info() {
 #   warn "This is a warning message."
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [WARN] This is a warning message.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [WARN] This is a warning message.
 warn() {
     log "WARN" "$@" || {
         status=$?
@@ -379,7 +379,7 @@ warn() {
 #   error "This is an error message."
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [ERROR] This is an error message.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [ERROR] This is an error message.
 error() {
     log "ERROR" "$@" || {
         status=$?
@@ -404,7 +404,7 @@ error() {
 #   die "This is a fatal error." 127
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [ERROR] This is a fatal error.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [ERROR] This is a fatal error.
 #   Exits with code 127.
 die() {
     die_msg="$1"
@@ -837,7 +837,6 @@ capture_outputs() {
     capture_outputs_ret_val_tmp=0
     # shellcheck disable=SC2034 # used indirectly
     "$@" > "$capture_outputs_tmp_out" 2> "$capture_outputs_tmp_err" || capture_outputs_ret_val_tmp=$?
-    # "$@" >"$capture_outputs_tmp_out" 2>"$capture_outputs_tmp_err"
 
     # shellcheck disable=SC2034 # used indirectly
     capture_outputs_out_var_tmp=$(cat "$capture_outputs_tmp_out") || {
@@ -896,7 +895,7 @@ test_init() {
 #   test_log "This is a test message."
 #
 # Output:
-#   [1970-01-01T00:00:00Z] [script_name] [TEST] This is a test message.
+#   [1970-01-01T00:00:00.000000Z] [script_name] [TEST] This is a test message.
 test_log() {
     log "TEST" "$@" || {
         status=$?

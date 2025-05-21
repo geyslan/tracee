@@ -4,7 +4,7 @@
 # shellcheck disable=SC1091
 . "${0%/*}/lib.sh"
 
-test__collect_missing_cmds() {
+test___collect_missing_cmds() {
     # case 1: test with all commands available
     result=$(__collect_missing_cmds echo grep sed)
     test_assert_eq "" "$result" "__collect_missing_cmds returns empty when all commands exist"
@@ -22,7 +22,7 @@ test__collect_missing_cmds() {
     test_assert_eq 1 "$found_two" "__collect_missing_cmds finds nonexistent2"
 }
 
-test__lib_require_cmds() {
+test___lib_require_cmds() {
     # case 1: test with all commands available
     __lib_require_cmds echo grep sed > /dev/null 2>&1
     test_assert_eq 0 "$?" "__lib_require_cmds returns exit code 0 when all commands exist"
@@ -334,8 +334,8 @@ require_cmds cut grep sed tr
 test_init
 
 # run
-test_run "__collect_missing_cmds" test__collect_missing_cmds
-test_run "__lib_require_cmds" test__lib_require_cmds
+test_run "__collect_missing_cmds" test___collect_missing_cmds
+test_run "__lib_require_cmds" test___lib_require_cmds
 
 test_run "require_cmds" test_require_cmds
 test_run "basename_strip_ext" test_basename_strip_ext
