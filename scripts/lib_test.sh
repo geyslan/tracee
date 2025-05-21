@@ -5,15 +5,15 @@
 . "${0%/*}/lib.sh"
 
 test__collect_missing_cmds() {
-	# case 1: test with all commands available
+    # case 1: test with all commands available
     result=$(__collect_missing_cmds echo grep sed)
     test_assert_eq "" "$result" "__collect_missing_cmds returns empty when all commands exist"
 
-	# case 2: test with one command missing
+    # case 2: test with one command missing
     result=$(__collect_missing_cmds echo nonexistentcmd)
     test_assert_eq " nonexistentcmd" "$result" "__collect_missing_cmds detects one missing command"
 
-	# case 3: test with multiple commands missing
+    # case 3: test with multiple commands missing
     result=$(__collect_missing_cmds echo nonexistent1 printf nonexistent2)
 
     found_one=$(printf "%s" "$result" | grep -c "nonexistent1")
@@ -23,26 +23,26 @@ test__collect_missing_cmds() {
 }
 
 test__lib_require_cmds() {
-	# case 1: test with all commands available
-	__lib_require_cmds echo grep sed >/dev/null 2>&1
-	test_assert_eq 0 "$?" "__lib_require_cmds returns exit code 0 when all commands exist"
+    # case 1: test with all commands available
+    __lib_require_cmds echo grep sed > /dev/null 2>&1
+    test_assert_eq 0 "$?" "__lib_require_cmds returns exit code 0 when all commands exist"
 
-	# case 2: test with one command missing (run in subshell to avoid exiting the test runner)
-	result=$(
-		__lib_require_cmds echo nonexistentcmd 2>&1
-	)
-	status=$?
-	test_assert_eq 127 "$status" "__lib_require_cmds returns exit code 127 when one command is missing" $status
+    # case 2: test with one command missing (run in subshell to avoid exiting the test runner)
+    result=$(
+        __lib_require_cmds echo nonexistentcmd 2>&1
+    )
+    status=$?
+    test_assert_eq 127 "$status" "__lib_require_cmds returns exit code 127 when one command is missing" $status
 
-	printf "%s" "$result" | grep -q "nonexistentcmd"
-	test_assert_eq 0 "$?" "__lib_require_cmds error output contains missing command" $status
+    printf "%s" "$result" | grep -q "nonexistentcmd"
+    test_assert_eq 0 "$?" "__lib_require_cmds error output contains missing command" $status
 }
 
 test_require_cmds() {
     # case 1: test with one missing command
     output=$(require_cmds echo nonexistentcmd 2>&1)
     status=$?
-    
+
     test_assert_eq 127 "$status" "require_cmds returns exit code 127" $status
     printf "%s" "$output" | grep -q "nonexistentcmd"
     test_assert_eq 0 "$?" "require_cmds error output contains missing command" $status
@@ -182,7 +182,7 @@ e"
     # case 12: empty input with no delimiter
     input=""
     expected=""
-    result=$(sanitize_to_lines "$input" >/dev/null)
+    result=$(sanitize_to_lines "$input" > /dev/null)
     status=$?
     test_assert_eq 0 "$status" "sanitize_to_lines returns exit code 0 for empty input" $status
     test_assert_eq "$expected" "$result" "empty input with no delimiter returns nothing" $status
@@ -218,7 +218,7 @@ test_log_functions() {
 test_die() {
     (
         die "fatal error" 7
-    ) 2>/dev/null
+    ) 2> /dev/null
     status=$?
     test_assert_eq 7 "$status" "die exits with code 7" "$status"
 }
@@ -300,7 +300,7 @@ d"
     actual=$(list_diff "$list1" "$list2")
     test_assert_eq "$expected" "$actual" "list_diff symmetric difference (lists values separated by newlines)"
 
-	# case 2: test with escaped newlines
+    # case 2: test with escaped newlines
     list1="a\nb\nc"
     list2="b\nc\nd"
     expected="a
@@ -308,13 +308,13 @@ d"
     actual=$(list_diff "$list1" "$list2")
     test_assert_eq "$expected" "$actual" "list_diff symmetric difference (lists values separated by \n)"
 
-	# case 3: test with space-separated values
-	list1="a b c"
-	list2="b c d"
-	expected="a
+    # case 3: test with space-separated values
+    list1="a b c"
+    list2="b c d"
+    expected="a
 d"
-	actual=$(list_diff "$list1" "$list2")
-	test_assert_eq "$expected" "$actual" "list_diff symmetric difference (lists values separated by spaces)"
+    actual=$(list_diff "$list1" "$list2")
+    test_assert_eq "$expected" "$actual" "list_diff symmetric difference (lists values separated by spaces)"
 
     # case 4: test with empty input
     list1=""

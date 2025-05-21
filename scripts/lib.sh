@@ -28,14 +28,14 @@ __init() {
 
     # must be sourced, not executed
     case "${0##*/}" in
-    "$__LIB_NAME")
-        __error "__init: This script must be sourced, not executed."
-        exit 1
-        ;;
+        "$__LIB_NAME")
+            __error "__init: This script must be sourced, not executed."
+            exit 1
+            ;;
     esac
 
     # set DEBUG level to 0 if not a number
-    DEBUG=$((${DEBUG:-0} + 0)) 2>/dev/null || DEBUG=0
+    DEBUG=$((${DEBUG:-0} + 0)) 2> /dev/null || DEBUG=0
 
     # enable shell tracing if DEBUG is greater than 1
     if [ "$DEBUG" -gt 1 ]; then
@@ -65,14 +65,14 @@ __init() {
 # - .%6N          → Decimal point followed by microseconds (first 6 digits of nanoseconds)
 # - Z             → Literal 'Z' to indicate UTC (Zulu time)
 __setup_timestamp() {
-    if command -v date >/dev/null 2>&1; then
+    if command -v date > /dev/null 2>&1; then
         __CMD_DATE_AVAILABLE=1
     else
         __CMD_DATE_AVAILABLE=0
     fi
 
     if [ "$__CMD_DATE_AVAILABLE" -eq 1 ]; then
-        if date -u '+%6N' >/dev/null 2>&1; then
+        if date -u '+%6N' > /dev/null 2>&1; then
             __CMD_DATE_FORMAT="+%Y-%m-%dT%H:%M:%S.%6NZ"
         else
             __CMD_DATE_FORMAT="+%Y-%m-%dT%H:%M:%S.000000Z"
@@ -213,7 +213,7 @@ __collect_missing_cmds() {
     __collect_missing_cmds_missing=""
 
     for cmd in "$@"; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
+        if ! command -v "$cmd" > /dev/null 2>&1; then
             __collect_missing_cmds_missing="$__collect_missing_cmds_missing $cmd"
         fi
     done
@@ -268,7 +268,7 @@ __lib_require_cmds() {
 #   1970-01-01T00:00:00.000000Z # if date command is not available or fails
 get_timestamp() {
     if [ "$__CMD_DATE_AVAILABLE" -eq 1 ]; then
-        if __ts=$(date -u "$__CMD_DATE_FORMAT" 2>/dev/null); then
+        if __ts=$(date -u "$__CMD_DATE_FORMAT" 2> /dev/null); then
             get_timestamp_ts="$__ts"
         else
             get_timestamp_ts="$__CMD_DATE_DEFAULT_VALUE"
@@ -721,7 +721,7 @@ list_diff() {
                 match_found=1
                 break
             fi
-        done <<EOF
+        done << EOF
 $list_diff_sanitized_b
 EOF
 
@@ -729,7 +729,7 @@ EOF
         if [ "$match_found" -eq 0 ]; then
             printf '%s\n' "$a"
         fi
-    done <<EOF
+    done << EOF
 $list_diff_sanitized_a
 EOF
     : # guard set -e on empty input
@@ -742,7 +742,7 @@ EOF
                 match_found=1
                 break
             fi
-        done <<EOF
+        done << EOF
 $list_diff_sanitized_a
 EOF
 
@@ -750,7 +750,7 @@ EOF
         if [ "$match_found" -eq 0 ]; then
             printf '%s\n' "$b"
         fi
-    done <<EOF
+    done << EOF
 $list_diff_sanitized_b
 EOF
     : # guard set -e on empty input
@@ -775,7 +775,7 @@ next_available_fd() {
 
         # ensure $fd is a valid integer
         case $fd in
-        '' | *[!0-9]*) continue ;;
+            '' | *[!0-9]*) continue ;;
         esac
 
         if [ "$fd" -gt "$max_fd" ]; then
@@ -836,7 +836,7 @@ capture_outputs() {
 
     capture_outputs_ret_val_tmp=0
     # shellcheck disable=SC2034 # used indirectly
-    "$@" >"$capture_outputs_tmp_out" 2>"$capture_outputs_tmp_err" || capture_outputs_ret_val_tmp=$?
+    "$@" > "$capture_outputs_tmp_out" 2> "$capture_outputs_tmp_err" || capture_outputs_ret_val_tmp=$?
     # "$@" >"$capture_outputs_tmp_out" 2>"$capture_outputs_tmp_err"
 
     # shellcheck disable=SC2034 # used indirectly

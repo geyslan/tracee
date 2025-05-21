@@ -21,7 +21,7 @@ FORCE_FETCH=0
 # Usage:
 #   print_help
 print_help() {
-    cat <<EOF
+    cat << EOF
 Usage: $0 [OPTIONS]
 
 Checks whether '.1.md' and '.1' documentation files have been updated together
@@ -47,36 +47,36 @@ EOF
 # parse arguments
 while [ "$#" -gt 0 ]; do
     case "$1" in
-    --base-ref)
-        shift
-        BASE_REF="$1"
-        ;;
-    --base-remote)
-        shift
-        BASE_REMOTE="$1"
-        ;;
-    --base-branch)
-        shift
-        BASE_BRANCH="$1"
-        ;;
-    -t | --target-ref)
-        shift
-        TARGET_REF="$1"
-        ;;
-    --fetch-depth)
-        shift
-        FETCH_DEPTH="$1"
-        ;;
-    --fetch)
-        FORCE_FETCH=1
-        ;;
-    -h | --help)
-        print_help
-        exit 0
-        ;;
-    *)
-        die "Unknown argument: $1"
-        ;;
+        --base-ref)
+            shift
+            BASE_REF="$1"
+            ;;
+        --base-remote)
+            shift
+            BASE_REMOTE="$1"
+            ;;
+        --base-branch)
+            shift
+            BASE_BRANCH="$1"
+            ;;
+        -t | --target-ref)
+            shift
+            TARGET_REF="$1"
+            ;;
+        --fetch-depth)
+            shift
+            FETCH_DEPTH="$1"
+            ;;
+        --fetch)
+            FORCE_FETCH=1
+            ;;
+        -h | --help)
+            print_help
+            exit 0
+            ;;
+        *)
+            die "Unknown argument: $1"
+            ;;
     esac
     shift
 done
