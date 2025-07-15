@@ -47,6 +47,8 @@ jobs:
           max_attempts: 5 # Maximum attempts to find the PR number
           sleep_time: 3 # Time to wait between attempts in seconds
         run: |
+          pwd
+          ls -l
           . ./scripts/lib.sh
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
