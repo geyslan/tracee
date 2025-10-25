@@ -1,23 +1,19 @@
-#!/usr/bin/bash -e
+#!/bin/bash
 
-KERNEL_VERSION=$(uname -r)
+# Execution script for FTRACE_HOOK test  
+# This script triggers commit_creds function calls
+# Module management is handled in the setup phase
 
-exit_err() {
-    echo -n "ERROR: "
-    echo "$@"
-    exit 1
-}
+# Create a simple program that will trigger commit_creds
+# We can do this by changing user credentials (like su or sudo operations)
+# or by creating processes that change their credentials
 
-. /etc/os-release
+# Simple approach: use su to trigger commit_creds
+echo "root" | su -c "true" 2>/dev/null || true
 
-# Build and load module
-dir="tests/e2e-inst-signatures/scripts/hooker"
-cd $dir || exit_err "could not cd to $dir"
-make && ./load.sh || exit_err "could not load module"
+# Alternative: create a temporary user and switch to it (more reliable)
+# But for simplicity, just trigger some credential operations
+id > /dev/null
 
-# Sleep a bit to allow module to load
-sleep 5
-lsmod | grep hooker || exit_err "module not loaded"
-
-# Unload module after 30 seconds
-nohup sleep 30 > /dev/null 2>&1 && ./unload.sh &
+# Give a moment for the event to be processed  
+sleep 1

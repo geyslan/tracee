@@ -151,7 +151,7 @@ for TEST in $TESTS; do
             continue
         fi
         info "setting up hooked_syscall test"
-        "${TESTS_DIR}"/hooked_syscall.sh
+        "${TESTS_DIR}"/hooked_syscall_setup.sh
         ;;
     FTRACE_HOOK)
         if [[ ! -d /lib/modules/${KERNEL}/build ]]; then
@@ -170,7 +170,7 @@ for TEST in $TESTS; do
             continue
         fi
         info "setting up ftrace_hook test"
-        "${TESTS_DIR}"/ftrace_hook.sh
+        "${TESTS_DIR}"/ftrace_hook_setup.sh
         ;;
     SECURITY_PATH_NOTIFY)
         if ! grep -qw "security_path_notify" /proc/kallsyms; then
