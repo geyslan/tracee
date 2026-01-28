@@ -3,9 +3,9 @@ kind: Policy
 metadata:
   name: writable-ds-test
   annotations:
-    description: test tracee's writable data source events
+    description: test tracee's writable data store (DataStoreService + Registry)
 spec:
-  scope: 
+  scope:
     - comm=ds_writer
   rules:
-    - event: WRITABLE_DATA_SOURCE
+    - event: WRITABLE_DATA_STORE

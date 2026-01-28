@@ -38,7 +38,7 @@ show_help() {
     echo "Examples:"
     echo "  $0                                    # Run all tests"
     echo "  INSTTESTS=core $0                     # Run only core tests"
-    echo "  INSTTESTS='VFS_WRITE DNS_DATA_SOURCE' $0  # Run specific tests"
+    echo "  INSTTESTS='VFS_WRITE DNS_DATA_STORE' $0  # Run specific tests"
 }
 
 # Show usage hint for error scenarios
@@ -55,7 +55,7 @@ show_usage_hint() {
     error "    - 'all' (run all available tests)"
     error "    - 'core' (run only core tests)"
     error "    - 'extended' (run only extended tests)"
-    error "    - specific test names (e.g., 'VFS_WRITE DNS_DATA_SOURCE')"
+    error "    - specific test names (e.g., 'VFS_WRITE DNS_DATA_STORE')"
 }
 
 # ==============================================================================
@@ -436,11 +436,11 @@ for test_name in "${!test_pids_map[@]}"; do
     fi
     rm -f "${test_output_file}"
 
-    # Extract PROCTREE_DATA_SOURCE signature logs from Tracee log file
-    if [[ "${test_name}" == "PROCTREE_DATA_SOURCE" && -f "${logfile}" ]]; then
-        signature_logs=$(grep '\[e2eProcessTreeDataSource\]' "${logfile}" 2> /dev/null || true)
+    # Extract PROCTREE_DATA_STORE signature logs from Tracee log file
+    if [[ "${test_name}" == "PROCTREE_DATA_STORE" && -f "${logfile}" ]]; then
+        signature_logs=$(grep '\[e2eProcessTreeDataStore\]' "${logfile}" 2> /dev/null || true)
         if [[ -n "${signature_logs}" ]]; then
-            info "  PROCTREE_DATA_SOURCE signature logs from Tracee:"
+            info "  PROCTREE_DATA_STORE signature logs from Tracee:"
             while IFS= read -r line; do
                 info "    ${line}"
             done <<< "${signature_logs}"

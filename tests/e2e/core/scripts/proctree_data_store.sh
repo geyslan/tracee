@@ -46,11 +46,11 @@ fi
 # Run phase: execute the program
 if [[ "${RUN}" == "true" ]]; then
     # Formula: f(n) = 1 + n × f(n-1), where f(0) = 1
-    # TIMES=0 creates 1 PROCTREE_DATA_SOURCE event
-    # TIMES=1 creates 2 PROCTREE_DATA_SOURCE events
-    # TIMES=2 creates 5 PROCTREE_DATA_SOURCE events
-    # TIMES=3 creates 16 PROCTREE_DATA_SOURCE events
-    # TIMES=4 creates 65 PROCTREE_DATA_SOURCE events
+    # TIMES=0 creates 1 PROCTREE_DATA_STORE event
+    # TIMES=1 creates 2 PROCTREE_DATA_STORE events
+    # TIMES=2 creates 5 PROCTREE_DATA_STORE events
+    # TIMES=3 creates 16 PROCTREE_DATA_STORE events
+    # TIMES=4 creates 65 PROCTREE_DATA_STORE events
     # TIMES=5 might case some missing ppids and/or lineage issues in github runners
     TIMES=3 \
     E2E_INST_TEST_SLEEP="${E2E_INST_TEST_SLEEP:-10}" \

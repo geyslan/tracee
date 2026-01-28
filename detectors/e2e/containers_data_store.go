@@ -10,18 +10,18 @@ import (
 	"github.com/aquasecurity/tracee/api/v1beta1/detection"
 )
 
-func init() { registerE2e(&E2eContainersDataSource{}) }
+func init() { registerE2e(&E2eContainersDataStore{}) }
 
-// E2eContainersDataSource is an e2e test detector for testing the containers data source API.
+// E2eContainersDataStore is an e2e test detector for testing the containers data store API.
 // Origin: "container" -> Uses ScopeFilters: container=started.
-type E2eContainersDataSource struct {
+type E2eContainersDataStore struct {
 	logger         detection.Logger
 	containerStore datastores.ContainerStore
 }
 
-func (d *E2eContainersDataSource) GetDefinition() detection.DetectorDefinition {
+func (d *E2eContainersDataStore) GetDefinition() detection.DetectorDefinition {
 	return detection.DetectorDefinition{
-		ID: "CONTAINERS_DATA_SOURCE",
+		ID: "CONTAINERS_DATA_STORE",
 		Requirements: detection.DetectorRequirements{
 			Events: []detection.EventRequirement{
 				{
@@ -38,8 +38,8 @@ func (d *E2eContainersDataSource) GetDefinition() detection.DetectorDefinition {
 			},
 		},
 		ProducedEvent: v1beta1.EventDefinition{
-			Name:        "CONTAINERS_DATA_SOURCE",
-			Description: "Instrumentation events E2E Tests: Containers Data Source Test",
+			Name:        "CONTAINERS_DATA_STORE",
+			Description: "Instrumentation events E2E Tests: Containers Data Store Test",
 			Version:     &v1beta1.Version{Major: 0, Minor: 1, Patch: 0},
 			Tags:        []string{"e2e"},
 		},
@@ -50,14 +50,14 @@ func (d *E2eContainersDataSource) GetDefinition() detection.DetectorDefinition {
 	}
 }
 
-func (d *E2eContainersDataSource) Init(params detection.DetectorParams) error {
+func (d *E2eContainersDataStore) Init(params detection.DetectorParams) error {
 	d.logger = params.Logger
 	d.containerStore = params.DataStores.Containers()
-	d.logger.Debugw("E2eContainersDataSource detector initialized")
+	d.logger.Debugw("E2eContainersDataStore detector initialized")
 	return nil
 }
 
-func (d *E2eContainersDataSource) OnEvent(ctx context.Context, event *v1beta1.Event) ([]detection.DetectorOutput, error) {
+func (d *E2eContainersDataStore) OnEvent(ctx context.Context, event *v1beta1.Event) ([]detection.DetectorOutput, error) {
 	pathname, err := v1beta1.GetDataSafe[string](event, "pathname")
 	if err != nil {
 		return nil, nil
@@ -81,7 +81,7 @@ func (d *E2eContainersDataSource) OnEvent(ctx context.Context, event *v1beta1.Ev
 	// Query the container store
 	containerInfo, err := d.containerStore.GetContainer(containerID)
 	if err != nil {
-		d.logger.Warnw("failed to find container in data source", "container_id", containerID, "error", err)
+		d.logger.Warnw("failed to find container in data store", "container_id", containerID, "error", err)
 		return nil, nil
 	}
 
@@ -93,7 +93,7 @@ func (d *E2eContainersDataSource) OnEvent(ctx context.Context, event *v1beta1.Ev
 	return detection.Detected(), nil
 }
 
-func (d *E2eContainersDataSource) Close() error {
-	d.logger.Debugw("E2eContainersDataSource detector closed")
+func (d *E2eContainersDataStore) Close() error {
+	d.logger.Debugw("E2eContainersDataStore detector closed")
 	return nil
 }

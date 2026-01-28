@@ -2,20 +2,22 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"math/rand"
 	"os"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/aquasecurity/tracee/api/v1beta1"
+	"github.com/aquasecurity/tracee/api/v1beta1/datastores"
 )
+
+// storeName must match detectors/e2e.E2eWritableStoreName (WRITABLE_DATA_STORE e2e test).
+const storeName = "writable_store"
 
 func printAndExit(msg string, args ...any) {
 	fmt.Printf(msg, args...)
@@ -26,38 +28,63 @@ func chooseWord(list []string) string {
 	return list[rand.Intn(len(list))]
 }
 
-func contaminate(ctx context.Context, client v1beta1.DataSourceServiceClient) error {
-	stream, err := client.WriteStream(ctx)
+func writeData(ctx context.Context, conn grpc.ClientConnInterface, key, value string) error {
+	keyAny, err := anypb.New(structpb.NewStringValue(key))
 	if err != nil {
-		return fmt.Errorf("error establishing stream: %v", err)
+		return err
 	}
-	for i := 0; i < 1000; i++ {
-		randomKey := chooseWord(wordList)
-		randomValue := chooseWord(wordList)
-		err := stream.Send(&v1beta1.WriteDataSourceRequest{
-			Id:        "demo",
-			Namespace: "e2e_inst",
-			Key:       structpb.NewStringValue(randomKey),
-			Value:     structpb.NewStringValue(randomValue),
-		})
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
+	dataAny, err := anypb.New(structpb.NewStringValue(value))
+	if err != nil {
+		return err
+	}
+	client := datastores.NewDataStoreServiceClient(conn)
+	_, err = client.WriteData(ctx, &datastores.WriteDataRequest{
+		StoreName: storeName,
+		Source:    "grpc",
+		Entry:     &datastores.DataEntry{Key: keyAny, Data: dataAny},
+	})
+	return err
+}
 
+func writeBatchData(ctx context.Context, conn grpc.ClientConnInterface, entries []struct{ Key, Value string }) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	protoEntries := make([]*datastores.DataEntry, 0, len(entries))
+	for _, e := range entries {
+		keyAny, err := anypb.New(structpb.NewStringValue(e.Key))
+		if err != nil {
 			return err
 		}
+		dataAny, err := anypb.New(structpb.NewStringValue(e.Value))
+		if err != nil {
+			return err
+		}
+		protoEntries = append(protoEntries, &datastores.DataEntry{Key: keyAny, Data: dataAny})
 	}
-	_, err = stream.CloseAndRecv()
-	if err != nil {
-		return fmt.Errorf("error closing stream: %v", err)
+	client := datastores.NewDataStoreServiceClient(conn)
+	_, err := client.WriteBatchData(ctx, &datastores.WriteBatchDataRequest{
+		StoreName: storeName,
+		Source:    "grpc",
+		Entries:   protoEntries,
+	})
+	return err
+}
+
+func contaminate(ctx context.Context, conn *grpc.ClientConn) error {
+	entries := make([]struct{ Key, Value string }, 1000)
+	for i := 0; i < 1000; i++ {
+		entries[i] = struct{ Key, Value string }{
+			Key:   chooseWord(wordList),
+			Value: chooseWord(wordList),
+		}
 	}
-	return nil
+	return writeBatchData(ctx, conn, entries)
 }
 
 func main() {
-	keyPtr := flag.String("key", "", "key to set in the data source")
-	valuePtr := flag.String("value", "", "key to set in the data source")
+	keyPtr := flag.String("key", "", "key to set in the writable store")
+	valuePtr := flag.String("value", "", "value to set in the writable store")
 	flag.Parse()
 
 	key := *keyPtr
@@ -87,19 +114,10 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 
-	client := v1beta1.NewDataSourceServiceClient(conn)
-	err = contaminate(ctx, client)
-	if err != nil {
-		printAndExit("error contaminating data source: %v\n", err)
+	if err := contaminate(ctx, conn); err != nil {
+		printAndExit("error contaminating writable store: %v\n", err)
 	}
-	_, err = client.Write(ctx, &v1beta1.WriteDataSourceRequest{
-		Id:        "demo",
-		Namespace: "e2e_inst",
-		Key:       structpb.NewStringValue(key),
-		Value:     structpb.NewStringValue(value),
-	})
-
-	if err != nil {
-		printAndExit("failed to write to data source: %v\n", err)
+	if err := writeData(ctx, conn, key, value); err != nil {
+		printAndExit("failed to write to writable store: %v\n", err)
 	}
 }

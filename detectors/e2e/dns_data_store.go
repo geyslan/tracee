@@ -10,17 +10,17 @@ import (
 	"github.com/aquasecurity/tracee/api/v1beta1/detection"
 )
 
-func init() { registerE2e(&E2eDnsDataSource{}) }
+func init() { registerE2e(&E2eDnsDataStore{}) }
 
-// E2eDnsDataSource is an e2e test detector for testing the DNS data source API.
-type E2eDnsDataSource struct {
+// E2eDnsDataStore is an e2e test detector for testing the DNS data store API.
+type E2eDnsDataStore struct {
 	logger   detection.Logger
 	dnsStore datastores.DNSStore
 }
 
-func (d *E2eDnsDataSource) GetDefinition() detection.DetectorDefinition {
+func (d *E2eDnsDataStore) GetDefinition() detection.DetectorDefinition {
 	return detection.DetectorDefinition{
-		ID: "DNS_DATA_SOURCE",
+		ID: "DNS_DATA_STORE",
 		Requirements: detection.DetectorRequirements{
 			Events: []detection.EventRequirement{
 				{
@@ -36,8 +36,8 @@ func (d *E2eDnsDataSource) GetDefinition() detection.DetectorDefinition {
 			},
 		},
 		ProducedEvent: v1beta1.EventDefinition{
-			Name:        "DNS_DATA_SOURCE",
-			Description: "Instrumentation events E2E Tests: DNS Data Source Test",
+			Name:        "DNS_DATA_STORE",
+			Description: "Instrumentation events E2E Tests: DNS Data Store Test",
 			Version:     &v1beta1.Version{Major: 0, Minor: 1, Patch: 0},
 			Tags:        []string{"e2e"},
 		},
@@ -48,14 +48,14 @@ func (d *E2eDnsDataSource) GetDefinition() detection.DetectorDefinition {
 	}
 }
 
-func (d *E2eDnsDataSource) Init(params detection.DetectorParams) error {
+func (d *E2eDnsDataStore) Init(params detection.DetectorParams) error {
 	d.logger = params.Logger
 	d.dnsStore = params.DataStores.DNS()
-	d.logger.Debugw("E2eDnsDataSource detector initialized")
+	d.logger.Debugw("E2eDnsDataStore detector initialized")
 	return nil
 }
 
-func (d *E2eDnsDataSource) OnEvent(ctx context.Context, event *v1beta1.Event) ([]detection.DetectorOutput, error) {
+func (d *E2eDnsDataStore) OnEvent(ctx context.Context, event *v1beta1.Event) ([]detection.DetectorOutput, error) {
 	// Get executable path from workload
 	execPath := ""
 	if event.Workload != nil && event.Workload.Process != nil && event.Workload.Process.Executable != nil {
@@ -66,10 +66,10 @@ func (d *E2eDnsDataSource) OnEvent(ctx context.Context, event *v1beta1.Event) ([
 		return nil, nil // Irrelevant code path
 	}
 
-	// Query DNS data source
+	// Query DNS data store
 	dnsResponse, err := d.dnsStore.GetDNSResponse("google.com")
 	if err != nil {
-		d.logger.Warnw("failed to find dns data in data source", "error", err)
+		d.logger.Warnw("failed to find dns data in data store", "error", err)
 		return nil, nil
 	}
 
@@ -86,7 +86,7 @@ func (d *E2eDnsDataSource) OnEvent(ctx context.Context, event *v1beta1.Event) ([
 	return detection.Detected(), nil
 }
 
-func (d *E2eDnsDataSource) Close() error {
-	d.logger.Debugw("E2eDnsDataSource detector closed")
+func (d *E2eDnsDataStore) Close() error {
+	d.logger.Debugw("E2eDnsDataStore detector closed")
 	return nil
 }

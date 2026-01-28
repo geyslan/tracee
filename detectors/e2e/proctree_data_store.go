@@ -14,22 +14,22 @@ import (
 	"github.com/aquasecurity/tracee/api/v1beta1/detection"
 )
 
-func init() { registerE2e(&E2eProcessTreeDataSource{}) }
+func init() { registerE2e(&E2eProcessTreeDataStore{}) }
 
 const (
 	proctreeTesterName = "proctreetester"
 )
 
-// E2eProcessTreeDataSource is an e2e test detector for testing the process tree data source API.
-type E2eProcessTreeDataSource struct {
+// E2eProcessTreeDataStore is an e2e test detector for testing the process tree data store API.
+type E2eProcessTreeDataStore struct {
 	logger       detection.Logger
 	processStore datastores.ProcessStore
 	holdTime     int
 }
 
-func (d *E2eProcessTreeDataSource) GetDefinition() detection.DetectorDefinition {
+func (d *E2eProcessTreeDataStore) GetDefinition() detection.DetectorDefinition {
 	return detection.DetectorDefinition{
-		ID: "PROCTREE_DATA_SOURCE",
+		ID: "PROCTREE_DATA_STORE",
 		Requirements: detection.DetectorRequirements{
 			Events: []detection.EventRequirement{
 				{
@@ -45,8 +45,8 @@ func (d *E2eProcessTreeDataSource) GetDefinition() detection.DetectorDefinition 
 			},
 		},
 		ProducedEvent: v1beta1.EventDefinition{
-			Name:        "PROCTREE_DATA_SOURCE",
-			Description: "Instrumentation events E2E Tests: Process Tree Data Source Test",
+			Name:        "PROCTREE_DATA_STORE",
+			Description: "Instrumentation events E2E Tests: Process Tree Data Store Test",
 			Version:     &v1beta1.Version{Major: 0, Minor: 1, Patch: 0},
 			Tags:        []string{"e2e"},
 		},
@@ -57,7 +57,7 @@ func (d *E2eProcessTreeDataSource) GetDefinition() detection.DetectorDefinition 
 	}
 }
 
-func (d *E2eProcessTreeDataSource) Init(params detection.DetectorParams) error {
+func (d *E2eProcessTreeDataStore) Init(params detection.DetectorParams) error {
 	d.logger = params.Logger
 	d.processStore = params.DataStores.Processes()
 
@@ -71,11 +71,11 @@ func (d *E2eProcessTreeDataSource) Init(params detection.DetectorParams) error {
 		d.holdTime = holdTime
 	}
 
-	d.logger.Debugw("E2eProcessTreeDataSource detector initialized", "holdTime", d.holdTime)
+	d.logger.Debugw("E2eProcessTreeDataStore detector initialized", "holdTime", d.holdTime)
 	return nil
 }
 
-func (d *E2eProcessTreeDataSource) OnEvent(ctx context.Context, event *v1beta1.Event) ([]detection.DetectorOutput, error) {
+func (d *E2eProcessTreeDataStore) OnEvent(ctx context.Context, event *v1beta1.Event) ([]detection.DetectorOutput, error) {
 	// Check that the event is from the tester
 	pathname, err := v1beta1.GetDataSafe[string](event, "pathname")
 	if err != nil || !strings.HasSuffix(pathname, proctreeTesterName) {
@@ -99,7 +99,7 @@ func (d *E2eProcessTreeDataSource) OnEvent(ctx context.Context, event *v1beta1.E
 
 		maxRetries := 5
 
-		// Check process entries in the data source
+		// Check process entries in the data store
 		processPassed := false
 		for attempt := 0; attempt < maxRetries; attempt++ {
 			if attempt > 0 {
@@ -126,7 +126,7 @@ func (d *E2eProcessTreeDataSource) OnEvent(ctx context.Context, event *v1beta1.E
 			return
 		}
 
-		// Check lineage entries in the data source
+		// Check lineage entries in the data store
 		lineagePassed := false
 		for attempt := 0; attempt < maxRetries; attempt++ {
 			if attempt > 0 {
@@ -155,9 +155,9 @@ func (d *E2eProcessTreeDataSource) OnEvent(ctx context.Context, event *v1beta1.E
 
 		// Note: In the original signature, a Finding is sent via callback in the goroutine.
 		// In the detector framework, OnEvent must return synchronously.
-		// This detector validates the data source works but cannot emit async detections.
+		// This detector validates the data store works but cannot emit async detections.
 		// The test should verify the detector logs success/failure.
-		d.logger.Infow("All process tree data source checks passed", "entityId", entityId)
+		d.logger.Infow("All process tree data store checks passed", "entityId", entityId)
 	}()
 
 	// Return detection immediately (the async checks happen in background)
@@ -166,7 +166,7 @@ func (d *E2eProcessTreeDataSource) OnEvent(ctx context.Context, event *v1beta1.E
 	return detection.Detected(), nil
 }
 
-func (d *E2eProcessTreeDataSource) Close() error {
-	d.logger.Debugw("E2eProcessTreeDataSource detector closed")
+func (d *E2eProcessTreeDataStore) Close() error {
+	d.logger.Debugw("E2eProcessTreeDataStore detector closed")
 	return nil
 }

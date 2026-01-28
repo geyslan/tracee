@@ -35,18 +35,10 @@ INSTTESTS_CORE_AVAILABLE="
     BPF_ATTACH
     CONTAINERS_DATA_SOURCE
     DNS_DATA_SOURCE
-    SECURITY_PATH_NOTIFY
-    SET_FS_PWD
-    SUSPICIOUS_SYSCALL_SOURCE
-    STACK_PIVOT
+    WRITABLE_DATA_STORE
 "
 
-# PROCTREE_DATA_SOURCE: Disabled - due to inconsistent results across kernels
-
-# WRITABLE_DATA_SOURCE: Disabled - requires gRPC server migration to new datastores.Registry
-# The gRPC server uses sigEngine.GetDataSource() (old signature engine registry)
-# but the detector uses params.DataStores.GetCustom() (new datastores registry).
-# These are separate systems. Migration requires updating pkg/server/grpc/datasource.go
+# PROCTREE_DATA_STORE: Disabled - due to inconsistent results across kernels
 
 # ==============================================================================
 # Core Test Configuration
@@ -55,17 +47,17 @@ INSTTESTS_CORE_AVAILABLE="
 # Called by coordinator after validation, only if core tests will run
 core_init_test_config() {
     add_test_config TEST_CONFIG_MAP "SET_FS_PWD" "set-fs-pwd-test" 5 0
-    # add_test_config TEST_CONFIG_MAP "WRITABLE_DATA_SOURCE" "writable-ds-test" 40 0
+    add_test_config TEST_CONFIG_MAP "WRITABLE_DATA_STORE" "writable-ds-test" 40 0
     add_test_config TEST_CONFIG_MAP "SECURITY_PATH_NOTIFY" "security-path-notify-test" 5 0
     add_test_config TEST_CONFIG_MAP "SUSPICIOUS_SYSCALL_SOURCE" "suspicious-syscall-src-test" 10 0
-    add_test_config TEST_CONFIG_MAP "CONTAINERS_DATA_SOURCE" "containers-ds-test" 10 5
-    # add_test_config TEST_CONFIG_MAP "PROCTREE_DATA_SOURCE" "proctree-ds-test" 15 10
+    add_test_config TEST_CONFIG_MAP "CONTAINERS_DATA_STORE" "containers-ds-test" 10 5
+    # add_test_config TEST_CONFIG_MAP "PROCTREE_DATA_STORE" "proctree-ds-test" 15 10
     add_test_config TEST_CONFIG_MAP "HOOKED_SYSCALL" "hooked-syscall-test" 10 5
     add_test_config TEST_CONFIG_MAP "PROCESS_EXECUTE_FAILED" "execute-failed-test" 5 2
     add_test_config TEST_CONFIG_MAP "STACK_PIVOT" "stack-pivot-test" 10 5
     add_test_config TEST_CONFIG_MAP "FTRACE_HOOK" "ftrace-hook-test" 15 5
     add_test_config TEST_CONFIG_MAP "BPF_ATTACH" "bpf-attach-test" 15 10
-    add_test_config TEST_CONFIG_MAP "DNS_DATA_SOURCE" "dns-ds-test" 10 0
+    add_test_config TEST_CONFIG_MAP "DNS_DATA_STORE" "dns-ds-test" 10 0
     add_test_config TEST_CONFIG_MAP "SECURITY_INODE_RENAME" "security-inode-rename-test" 10 2
     add_test_config TEST_CONFIG_MAP "FILE_MODIFICATION" "file-modification-test" 5 0
     add_test_config TEST_CONFIG_MAP "LSM_TEST" "lsm-test" 5 0
@@ -209,16 +201,16 @@ core_test_setup() {
             fi
             ;;
 
-        WRITABLE_DATA_SOURCE)
-            info "building writable data source test..."
-            if ! ./tests/e2e/core/scripts/writable_data_source.sh --build; then
-                error "could not build writable_data_source"
+        WRITABLE_DATA_STORE)
+            info "building writable data store test..."
+            if ! ./tests/e2e/core/scripts/writable_data_store.sh --build; then
+                error "could not build writable_data_store"
             fi
             ;;
 
-        CONTAINERS_DATA_SOURCE)
-            info "pulling container image for containers data source test..."
-            if ! ./tests/e2e/core/scripts/containers_data_source.sh --install; then
+        CONTAINERS_DATA_STORE)
+            info "pulling container image for containers data store test..."
+            if ! ./tests/e2e/core/scripts/containers_data_store.sh --install; then
                 error "could not pull container image"
                 # Note: don't skip this test so it can fail
             fi
@@ -245,13 +237,13 @@ core_test_setup() {
             fi
             ;;
 
-        PROCTREE_DATA_SOURCE)
-            info "compiling proctree data source test..."
-            if ! ./tests/e2e/core/scripts/proctree_data_source.sh --build; then
-                error "could not compile proctree_data_source"
+        PROCTREE_DATA_STORE)
+            info "compiling proctree data store test..."
+            if ! ./tests/e2e/core/scripts/proctree_data_store.sh --build; then
+                error "could not compile proctree_data_store"
             fi
-            # Set up the hold on time for each selected event to be checked in the data source
-            PROCTREE_HOLD_TIME=$(get_test_sleep TEST_CONFIG_MAP "PROCTREE_DATA_SOURCE")
+            # Set up the hold on time for each selected event to be checked in the data store
+            PROCTREE_HOLD_TIME=$(get_test_sleep TEST_CONFIG_MAP "PROCTREE_DATA_STORE")
             PROCTREE_HOLD_TIME=$((PROCTREE_HOLD_TIME / 2))
             if [[ ${PROCTREE_HOLD_TIME} -lt 5 ]]; then
                 PROCTREE_HOLD_TIME=5
@@ -297,13 +289,13 @@ core_test_run() {
             test_args="--install --uninstall"
             ;;
 
-        CONTAINERS_DATA_SOURCE | \
+        CONTAINERS_DATA_STORE | \
             BPF_ATTACH | \
             SUSPICIOUS_SYSCALL_SOURCE | \
             STACK_PIVOT | \
-            WRITABLE_DATA_SOURCE | \
+            WRITABLE_DATA_STORE | \
             SECURITY_PATH_NOTIFY | \
-            PROCTREE_DATA_SOURCE | \
+            PROCTREE_DATA_STORE | \
             VFS_WRITE)
             test_args="--run"
 
@@ -341,17 +333,17 @@ core_test_check() {
     # Get policy and match count for all core tests
     case ${test} in
         SET_FS_PWD | \
-            WRITABLE_DATA_SOURCE | \
+            WRITABLE_DATA_STORE | \
             SECURITY_PATH_NOTIFY | \
             SUSPICIOUS_SYSCALL_SOURCE | \
-            CONTAINERS_DATA_SOURCE | \
-            PROCTREE_DATA_SOURCE | \
+            CONTAINERS_DATA_STORE | \
+            PROCTREE_DATA_STORE | \
             HOOKED_SYSCALL | \
             PROCESS_EXECUTE_FAILED | \
             STACK_PIVOT | \
             FTRACE_HOOK | \
             BPF_ATTACH | \
-            DNS_DATA_SOURCE | \
+            DNS_DATA_STORE | \
             SECURITY_INODE_RENAME | \
             FILE_MODIFICATION | \
             VFS_WRITE)
