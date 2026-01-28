@@ -33,13 +33,15 @@ INSTTESTS_CORE_AVAILABLE="
     FTRACE_HOOK
     SECURITY_INODE_RENAME
     BPF_ATTACH
-    CONTAINERS_DATA_SOURCE
-    DNS_DATA_SOURCE
+    CONTAINERS_DATA_STORE
+    DNS_DATA_STORE
+    PROCTREE_DATA_STORE
     WRITABLE_DATA_STORE
+    SECURITY_PATH_NOTIFY
+    SET_FS_PWD
+    SUSPICIOUS_SYSCALL_SOURCE
+    STACK_PIVOT
 "
-
-# PROCTREE_DATA_STORE: Disabled - due to inconsistent results across kernels
-
 # ==============================================================================
 # Core Test Configuration
 # ==============================================================================
@@ -51,7 +53,7 @@ core_init_test_config() {
     add_test_config TEST_CONFIG_MAP "SECURITY_PATH_NOTIFY" "security-path-notify-test" 5 0
     add_test_config TEST_CONFIG_MAP "SUSPICIOUS_SYSCALL_SOURCE" "suspicious-syscall-src-test" 10 0
     add_test_config TEST_CONFIG_MAP "CONTAINERS_DATA_STORE" "containers-ds-test" 10 5
-    # add_test_config TEST_CONFIG_MAP "PROCTREE_DATA_STORE" "proctree-ds-test" 15 10
+    add_test_config TEST_CONFIG_MAP "PROCTREE_DATA_STORE" "proctree-ds-test" 15 10
     add_test_config TEST_CONFIG_MAP "HOOKED_SYSCALL" "hooked-syscall-test" 10 5
     add_test_config TEST_CONFIG_MAP "PROCESS_EXECUTE_FAILED" "execute-failed-test" 5 2
     add_test_config TEST_CONFIG_MAP "STACK_PIVOT" "stack-pivot-test" 10 5
@@ -250,6 +252,9 @@ core_test_setup() {
                 info "PROCTREE_HOLD_TIME is too low, setting to 5 seconds"
             fi
             export PROCTREE_HOLD_TIME
+            
+            # Set validation sampling: validate every 5th event to balance throughput and validation
+            export PROCTREE_VALIDATION_MOD=5
             ;;
 
         VFS_WRITE)
