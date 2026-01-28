@@ -699,7 +699,8 @@ TRACEE_BUILD_ORDER_DEPS = \
 	.eval_goenv \
 	.checkver_$(CMD_GO) \
 	.checklib_$(LIB_BPF) \
-	btfhub
+	btfhub \
+	signatures
 
 # Canned recipe for building tracee variants
 define TRACEE_BUILD_RECIPE
