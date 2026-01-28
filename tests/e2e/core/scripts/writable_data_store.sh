@@ -48,6 +48,13 @@ fi
 if [[ "${RUN}" == "true" ]]; then
     # Run ds_writer 4 times in parallel. Each instance writes 1000 key/value pairs
     # then the final "bruh"/"moment"; the E2eWritableStore detector matches on that.
+    # 
+    # Expected detection count: 16-40 events (typically ~25)
+    # - 4 processes run in parallel
+    # - Each Go process spawns multiple OS threads (main + GOMAXPROCS workers + GC + network)
+    # - Detector fires on sched_process_exit for comm=ds_writer when store has "bruh"="moment"
+    # - Thread count varies by CPU count, Go runtime, and gRPC library behavior
+    # - Early thread exits may not match if "bruh" not written yet (race condition)
     declare -A pids=()
 
     for i in {1..4}; do
