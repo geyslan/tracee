@@ -1,0 +1,24 @@
+  # Environment-specific setup
+  - |
+    . /tmp/tracee-vm-env.sh
+    
+    if [ "${ENVIRONMENT}" = "local" ]; then
+      echo "Setting up local development environment..." | tee -a /var/log/tracee-vm-init.log
+      mkdir -p /mnt/tracee
+      chown ${USERNAME}:${USERNAME} /mnt/tracee
+      
+      # Append virtiofs mounts to /etc/fstab (distro-agnostic approach)
+      # Virtiofs config was written to /tmp/virtiofs-mounts.conf via write_files
+      if [ -f /tmp/virtiofs-mounts.conf ]; then
+        echo "" >> /etc/fstab  # Add blank line for readability
+        cat /tmp/virtiofs-mounts.conf >> /etc/fstab
+        echo "Virtiofs mounts added to /etc/fstab (will auto-mount after reboot)" | tee -a /var/log/tracee-vm-init.log
+      else
+        echo "Warning: /tmp/virtiofs-mounts.conf not found, skipping fstab update" | tee -a /var/log/tracee-vm-init.log
+      fi
+      
+      # Reload systemd to pick up fstab changes
+      systemctl daemon-reload
+      
+      echo "Local development environment configured" | tee -a /var/log/tracee-vm-init.log
+    fi

@@ -1,0 +1,17 @@
+  # Blacklist floppy driver to prevent fd0 I/O errors in VM
+  - path: /etc/modprobe.d/blacklist-floppy.conf
+    permissions: '0644'
+    content: |
+      # Prevent floppy driver from loading in VM environment
+      # VMs don't have physical floppy drives and the driver causes harmless I/O errors
+      blacklist floppy
+  
+  # Virtiofs mount entries for local development (fstab approach)
+  # Written to /tmp and conditionally appended to /etc/fstab by setup-virtfs script
+  - path: /tmp/virtiofs-mounts.conf
+    permissions: '0644'
+    content: |
+      # Virtiofs mounts for local development
+      # virtiofs provides full POSIX semantics (file locking, timestamps, mmap, etc.)
+      # nofail: don't block boot if virtiofs not available
+      tracee      /mnt/tracee    virtiofs  rw,nofail 0 0

@@ -1,0 +1,29 @@
+  # Clone Tracee scripts from GitHub using sparse-checkout
+  # This gets ALL scripts with proper structure in one efficient operation
+  - |
+    echo "Cloning Tracee scripts from GitHub..." | tee -a /var/log/tracee-vm-init.log
+    
+    # Configure repository and branch (can be overridden via environment)
+    TRACEE_REPO="${TRACEE_REPO:-https://github.com/aquasecurity/tracee.git}"
+    TRACEE_BRANCH="${TRACEE_BRANCH:-main}"
+    
+    cd /tmp
+    
+    # Use git sparse-checkout to clone only the scripts/ folder (efficient & complete)
+    # --filter=blob:none: don't download file contents until needed (faster)
+    # --sparse: enable sparse-checkout mode
+    # --depth=1: shallow clone (only latest commit, faster)
+    git clone \
+      --filter=blob:none \
+      --sparse \
+      --depth=1 \
+      --branch="${TRACEE_BRANCH}" \
+      "${TRACEE_REPO}" \
+      tracee 2>&1 | tee -a /var/log/tracee-vm-init.log
+    
+    cd tracee
+    
+    # Configure sparse-checkout to only get the scripts/ directory
+    git sparse-checkout set scripts 2>&1 | tee -a /var/log/tracee-vm-init.log
+    
+    echo "Tracee scripts cloned successfully from ${TRACEE_REPO} (branch: ${TRACEE_BRANCH})" | tee -a /var/log/tracee-vm-init.log
