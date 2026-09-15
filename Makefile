@@ -231,14 +231,6 @@ ifeq ($(UNAME_M),aarch64)
 	GO_ARCH = arm64
 endif
 
-# TODO(#5287): re-enable -race on arm64 once golang/go#78573 is fixed.
-# Go 1.26.2 ships a race_linux_arm64.syso whose TSAN runtime references
-# LSE outline-atomics symbols (__aarch64_*_sync) that clang 19 / compiler-rt
-# cannot resolve, breaking every -race link on aarch64.
-ifneq ($(GO_ARCH),arm64)
-	GO_TEST_RACE ?= -race
-endif
-
 .PHONY: env
 env::
 	@echo ---------------------------------------
@@ -950,7 +942,7 @@ test-unit:: \
 	$(CMD_GO) test \
 		-tags $(GO_TAGS_EBPF) \
 		-short \
-		$(GO_TEST_RACE) \
+		-race \
 		-shuffle on \
 		-failfast \
 		-v \
@@ -969,7 +961,7 @@ test-types:: \
 	@# Note that we must change the directory here because types is a standalone Go module.
 	@cd ./types && $(CMD_GO) test \
 		-short \
-		$(GO_TEST_RACE) \
+		-race \
 		-shuffle on \
 		-v \
 		./...
@@ -981,7 +973,7 @@ test-common:: \
 	@# Note that we must change the directory here because common is a standalone Go module.
 	@cd ./common && $(CMD_GO) test \
 		-short \
-		$(GO_TEST_RACE) \
+		-race \
 		-shuffle on \
 		-v \
 		./...
@@ -1056,7 +1048,7 @@ test-integration:: \
 			" \
 		-shuffle on \
 		-timeout 20m \
-		$(GO_TEST_RACE) \
+		-race \
 		-v \
 		-p 1 \
 		-count=1 \
@@ -1083,7 +1075,7 @@ test-compatibility:: \
 			" \
 		-shuffle on \
 		-timeout 20m \
-		$(GO_TEST_RACE) \
+		-race \
 		-v \
 		-p 1 \
 		-count=1 \
@@ -1115,7 +1107,7 @@ test-performance:: \
 			-extldflags \"$(CGO_EXT_LDFLAGS_EBPF)\" \
 			-X main.version=\"$(VERSION)\" \
 			" \
-		$(GO_TEST_RACE) \
+		-race \
 		-shuffle on \
 		-v \
 		-p 1 \
