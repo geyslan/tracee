@@ -51,7 +51,7 @@ func ConvertToProto(e *trace.Event) *pb.Event {
 func fillProtoSlab(e *trace.Event, s *eventSlab) *pb.Event {
 	event := &s.event
 	event.Id = pb.EventId(e.EventID)
-	event.Name = sanitizeStringForProtobuf(e.EventName)
+	event.Name = SanitizeStringForProtobuf(e.EventName)
 
 	if e.Timestamp != 0 {
 		event.Timestamp = timestamppb.New(time.Unix(0, int64(e.Timestamp)))
@@ -71,11 +71,11 @@ func fillProtoSlab(e *trace.Event, s *eventSlab) *pb.Event {
 		}
 
 		thread := &pb.Thread{
-			Name:           sanitizeStringForProtobuf(e.ProcessName),
+			Name:           SanitizeStringForProtobuf(e.ProcessName),
 			UniqueId:       wrapperspb.UInt32(e.ThreadEntityId),
 			Tid:            wrapperspb.UInt32(uint32(e.ThreadID)),
 			HostTid:        wrapperspb.UInt32(uint32(e.HostThreadID)),
-			Syscall:        sanitizeStringForProtobuf(e.Syscall),
+			Syscall:        SanitizeStringForProtobuf(e.Syscall),
 			Compat:         e.ContextFlags.IsCompat, // Compat mode (32-bit on 64-bit)
 			UserStackTrace: userStackTrace,
 		}
@@ -93,7 +93,7 @@ func fillProtoSlab(e *trace.Event, s *eventSlab) *pb.Event {
 			Thread: thread,
 		}
 		if e.Executable.Path != "" {
-			process.Executable = &pb.Executable{Path: sanitizeStringForProtobuf(e.Executable.Path)}
+			process.Executable = &pb.Executable{Path: SanitizeStringForProtobuf(e.Executable.Path)}
 		}
 		// Add parent/ancestor info if present
 		if e.ParentEntityId != 0 {
@@ -113,16 +113,16 @@ func fillProtoSlab(e *trace.Event, s *eventSlab) *pb.Event {
 	// Container info
 	if e.Container.ID != "" {
 		workload.Container = &pb.Container{
-			Id:      sanitizeStringForProtobuf(e.Container.ID),
-			Name:    sanitizeStringForProtobuf(e.Container.Name),
+			Id:      SanitizeStringForProtobuf(e.Container.ID),
+			Name:    SanitizeStringForProtobuf(e.Container.Name),
 			Started: e.ContextFlags.ContainerStarted,
 		}
 		if e.Container.ImageName != "" {
 			workload.Container.Image = &pb.ContainerImage{
-				Name: sanitizeStringForProtobuf(e.Container.ImageName),
+				Name: SanitizeStringForProtobuf(e.Container.ImageName),
 			}
 			if e.Container.ImageDigest != "" {
-				workload.Container.Image.RepoDigests = []string{sanitizeStringForProtobuf(e.Container.ImageDigest)}
+				workload.Container.Image.RepoDigests = []string{SanitizeStringForProtobuf(e.Container.ImageDigest)}
 			}
 		}
 		hasWorkload = true
@@ -132,7 +132,7 @@ func fillProtoSlab(e *trace.Event, s *eventSlab) *pb.Event {
 	if e.Kubernetes.PodName != "" {
 		workload.K8S = &pb.K8S{
 			Namespace: &pb.K8SNamespace{
-				Name: sanitizeStringForProtobuf(e.Kubernetes.PodNamespace),
+				Name: SanitizeStringForProtobuf(e.Kubernetes.PodNamespace),
 			},
 			Pod: &pb.Pod{
 				Name: e.Kubernetes.PodName,
@@ -346,7 +346,7 @@ func getEventDataSlab(e trace.Event, s *eventSlab) ([]*pb.EventValue, error) {
 			}
 		}
 
-		ev.Name = sanitizeStringForProtobuf(arg.ArgMeta.Name)
+		ev.Name = SanitizeStringForProtobuf(arg.ArgMeta.Name)
 		data = append(data, ev)
 	}
 
@@ -380,7 +380,7 @@ func fillEventValue(ev *pb.EventValue, arg trace.Argument) (bool, error) {
 	case bool:
 		ev.Value = &pb.EventValue_Bool{Bool: v}
 	case string:
-		ev.Value = &pb.EventValue_Str{Str: sanitizeStringForProtobuf(v)}
+		ev.Value = &pb.EventValue_Str{Str: SanitizeStringForProtobuf(v)}
 	case []string:
 		ev.Value = &pb.EventValue_StrArray{StrArray: &pb.StringArray{Value: sanitizeStringArrayForProtobuf(v)}}
 	case []byte:
@@ -437,7 +437,7 @@ func getEventData(e trace.Event) ([]*pb.EventValue, error) {
 			continue
 		}
 
-		eventValue.Name = sanitizeStringForProtobuf(arg.ArgMeta.Name)
+		eventValue.Name = SanitizeStringForProtobuf(arg.ArgMeta.Name)
 		data = append(data, eventValue)
 	}
 
@@ -475,7 +475,7 @@ func parseArgument(arg trace.Argument) (*pb.EventValue, error) {
 		return &pb.EventValue{Value: &pb.EventValue_Bool{Bool: v}}, nil
 
 	case string:
-		return &pb.EventValue{Value: &pb.EventValue_Str{Str: sanitizeStringForProtobuf(v)}}, nil
+		return &pb.EventValue{Value: &pb.EventValue_Str{Str: SanitizeStringForProtobuf(v)}}, nil
 
 	case []string:
 		return &pb.EventValue{Value: &pb.EventValue_StrArray{StrArray: &pb.StringArray{Value: sanitizeStringArrayForProtobuf(v)}}}, nil
@@ -602,7 +602,7 @@ func parseArgument(arg trace.Argument) (*pb.EventValue, error) {
 		questions := make([]*pb.DnsQueryData, len(v))
 		for i, q := range v {
 			questions[i] = &pb.DnsQueryData{
-				Query:      sanitizeStringForProtobuf(q.Query),
+				Query:      SanitizeStringForProtobuf(q.Query),
 				QueryType:  q.QueryType,
 				QueryClass: q.QueryClass,
 			}
@@ -621,12 +621,12 @@ func parseArgument(arg trace.Argument) (*pb.EventValue, error) {
 				answer[j] = &pb.DnsAnswer{
 					Type:   a.Type,
 					Ttl:    a.Ttl,
-					Answer: sanitizeStringForProtobuf(a.Answer),
+					Answer: SanitizeStringForProtobuf(a.Answer),
 				}
 			}
 			responses[i] = &pb.DnsResponseData{
 				DnsQueryData: &pb.DnsQueryData{
-					Query:      sanitizeStringForProtobuf(r.QueryData.Query),
+					Query:      SanitizeStringForProtobuf(r.QueryData.Query),
 					QueryType:  r.QueryData.QueryType,
 					QueryClass: r.QueryData.QueryClass,
 				},
@@ -643,8 +643,8 @@ func parseArgument(arg trace.Argument) (*pb.EventValue, error) {
 		syscalls := make([]*pb.HookedSymbolData, len(v))
 		for i, s := range v {
 			syscalls[i] = &pb.HookedSymbolData{
-				SymbolName:  sanitizeStringForProtobuf(s.SymbolName),
-				ModuleOwner: sanitizeStringForProtobuf(s.ModuleOwner),
+				SymbolName:  SanitizeStringForProtobuf(s.SymbolName),
+				ModuleOwner: SanitizeStringForProtobuf(s.ModuleOwner),
 			}
 		}
 		return &pb.EventValue{
@@ -657,8 +657,8 @@ func parseArgument(arg trace.Argument) (*pb.EventValue, error) {
 		m := make(map[string]*pb.HookedSymbolData)
 		for k, v := range v {
 			m[k] = &pb.HookedSymbolData{
-				SymbolName:  sanitizeStringForProtobuf(v.SymbolName),
-				ModuleOwner: sanitizeStringForProtobuf(v.ModuleOwner),
+				SymbolName:  SanitizeStringForProtobuf(v.SymbolName),
+				ModuleOwner: SanitizeStringForProtobuf(v.ModuleOwner),
 			}
 		}
 		return &pb.EventValue{
@@ -668,7 +668,7 @@ func parseArgument(arg trace.Argument) (*pb.EventValue, error) {
 		}, nil
 
 	case net.IP: // DNS events use net.IP on src/dst
-		return &pb.EventValue{Value: &pb.EventValue_Str{Str: sanitizeStringForProtobuf(v.String())}}, nil
+		return &pb.EventValue{Value: &pb.EventValue_Str{Str: SanitizeStringForProtobuf(v.String())}}, nil
 
 	case map[string]interface{}:
 		// Handle generic map (e.g., detectedFrom nested structures)
@@ -775,34 +775,30 @@ func getSockaddr(v map[string]string) (*pb.EventValue, error) {
 	return &pb.EventValue{Value: &pb.EventValue_Sockaddr{Sockaddr: sockaddr}}, nil
 }
 
-// sanitizeStringForProtobuf removes invalid UTF-8 characters from a string
-// to prevent protobuf serialization errors
-func sanitizeStringForProtobuf(s string) string {
+// SanitizeStringForProtobuf returns s with every maximal run of invalid UTF-8
+// bytes replaced by a single U+FFFD (the Unicode replacement character), so the
+// value can be stored in a proto3 string field, which proto.Marshal rejects
+// unless it is valid UTF-8.
+//
+// Invalid bytes are replaced rather than dropped so the output still marks
+// where the original data was damaged ("/run/\uFFFD.sock" instead of the
+// misleading "/run/.sock") and a legitimately encoded U+FFFD in the input is
+// preserved. This is the same coercion encoding/json applies to strings, so the
+// gRPC and JSON outputs of the same event agree.
+//
+// Valid input is returned as is, without allocating.
+func SanitizeStringForProtobuf(s string) string {
 	if utf8.ValidString(s) {
 		return s
 	}
-
-	// Build a new string with only valid UTF-8 characters
-	var builder strings.Builder
-	builder.Grow(len(s)) // Pre-allocate space for efficiency
-
-	for len(s) > 0 {
-		r, size := utf8.DecodeRuneInString(s)
-		if r != utf8.RuneError {
-			builder.WriteRune(r)
-		}
-		// Skip invalid bytes by advancing the position
-		s = s[size:]
-	}
-
-	return builder.String()
+	return strings.ToValidUTF8(s, "\uFFFD")
 }
 
 // sanitizeStringArrayForProtobuf sanitizes all string elements in a slice
 // to ensure they contain only valid UTF-8 characters
 func sanitizeStringArrayForProtobuf(arr []string) []string {
 	for i, s := range arr {
-		arr[i] = sanitizeStringForProtobuf(s)
+		arr[i] = SanitizeStringForProtobuf(s)
 	}
 	return arr
 }
@@ -815,7 +811,7 @@ func sanitizeMapForProtobuf(m map[string]interface{}) map[string]interface{} {
 	for k, v := range m {
 		switch val := v.(type) {
 		case string:
-			sanitizedMap[k] = sanitizeStringForProtobuf(val)
+			sanitizedMap[k] = SanitizeStringForProtobuf(val)
 		case map[string]interface{}:
 			sanitizedMap[k] = sanitizeMapForProtobuf(val)
 		case []trace.Argument:
@@ -858,7 +854,7 @@ func getDetectedFrom(detectedFromArg trace.Argument) (*pb.DetectedFrom, error) {
 	if !ok {
 		return nil, errfmt.Errorf("error getting name of detected from event: %v", m)
 	}
-	detectedFrom.Name = sanitizeStringForProtobuf(name)
+	detectedFrom.Name = SanitizeStringForProtobuf(name)
 
 	detectedFromEventArgs, ok := m["args"].([]trace.Argument)
 	if !ok {
@@ -880,7 +876,7 @@ func getDetectedFrom(detectedFromArg trace.Argument) (*pb.DetectedFrom, error) {
 			)
 			continue
 		}
-		eventValue.Name = sanitizeStringForProtobuf(arg.ArgMeta.Name)
+		eventValue.Name = SanitizeStringForProtobuf(arg.ArgMeta.Name)
 		data = append(data, eventValue)
 	}
 
@@ -926,10 +922,10 @@ func convertIpv4(v *trace.ProtoIPv4) (*pb.EventValue, error) {
 				Flags:      uint32(v.Flags),
 				FragOffset: uint32(v.FragOffset),
 				Ttl:        uint32(v.TTL),
-				Protocol:   sanitizeStringForProtobuf(v.Protocol),
+				Protocol:   SanitizeStringForProtobuf(v.Protocol),
 				Checksum:   uint32(v.Checksum),
 				SrcIp:      v.SrcIP,
-				DstIp:      sanitizeStringForProtobuf(v.DstIP),
+				DstIp:      SanitizeStringForProtobuf(v.DstIP),
 			},
 		},
 	}, nil
@@ -943,10 +939,10 @@ func convertIpv6(v *trace.ProtoIPv6) (*pb.EventValue, error) {
 				TrafficClass: uint32(v.TrafficClass),
 				FlowLabel:    v.FlowLabel,
 				Length:       uint32(v.Length),
-				NextHeader:   sanitizeStringForProtobuf(v.NextHeader),
+				NextHeader:   SanitizeStringForProtobuf(v.NextHeader),
 				HopLimit:     uint32(v.HopLimit),
-				SrcIp:        sanitizeStringForProtobuf(v.SrcIP),
-				DstIp:        sanitizeStringForProtobuf(v.DstIP),
+				SrcIp:        SanitizeStringForProtobuf(v.SrcIP),
+				DstIp:        SanitizeStringForProtobuf(v.DstIP),
 			},
 		},
 	}, nil
@@ -995,7 +991,7 @@ func convertIcmp(v *trace.ProtoICMP) (*pb.EventValue, error) {
 	return &pb.EventValue{
 		Value: &pb.EventValue_Icmp{
 			Icmp: &pb.ICMP{
-				TypeCode: sanitizeStringForProtobuf(v.TypeCode),
+				TypeCode: SanitizeStringForProtobuf(v.TypeCode),
 				Checksum: uint32(v.Checksum),
 				Id:       uint32(v.Id),
 				Seq:      uint32(v.Seq),
@@ -1008,7 +1004,7 @@ func convertIcmpv6(v *trace.ProtoICMPv6) (*pb.EventValue, error) {
 	return &pb.EventValue{
 		Value: &pb.EventValue_Icmpv6{
 			Icmpv6: &pb.ICMPv6{
-				TypeCode: sanitizeStringForProtobuf(v.TypeCode),
+				TypeCode: SanitizeStringForProtobuf(v.TypeCode),
 				Checksum: uint32(v.Checksum),
 			},
 		},
@@ -1019,7 +1015,7 @@ func convertDns(v *trace.ProtoDNS) (*pb.EventValue, error) {
 	questions := make([]*pb.DNSQuestion, len(v.Questions))
 	for i, q := range v.Questions {
 		questions[i] = &pb.DNSQuestion{
-			Name:  sanitizeStringForProtobuf(q.Name),
+			Name:  SanitizeStringForProtobuf(q.Name),
 			Type:  q.Type,
 			Class: q.Class,
 		}
@@ -1045,13 +1041,13 @@ func convertDns(v *trace.ProtoDNS) (*pb.EventValue, error) {
 			Dns: &pb.DNS{
 				Id:           uint32(v.ID),
 				Qr:           uint32(v.QR),
-				OpCode:       sanitizeStringForProtobuf(v.OpCode),
+				OpCode:       SanitizeStringForProtobuf(v.OpCode),
 				Aa:           uint32(v.AA),
 				Tc:           uint32(v.TC),
 				Rd:           uint32(v.RD),
 				Ra:           uint32(v.RA),
 				Z:            uint32(v.Z),
-				ResponseCode: sanitizeStringForProtobuf(v.ResponseCode),
+				ResponseCode: SanitizeStringForProtobuf(v.ResponseCode),
 				QdCount:      uint32(v.QDCount),
 				AnCount:      uint32(v.ANCount),
 				NsCount:      uint32(v.NSCount),
@@ -1070,23 +1066,23 @@ func getDNSResourceRecord(source trace.ProtoDNSResourceRecord) *pb.DNSResourceRe
 	for i, o := range source.OPT {
 		opts[i] = &pb.DNSOPT{
 			Code: o.Code,
-			Data: sanitizeStringForProtobuf(o.Data),
+			Data: SanitizeStringForProtobuf(o.Data),
 		}
 	}
 
 	return &pb.DNSResourceRecord{
-		Name:  sanitizeStringForProtobuf(source.Name),
+		Name:  SanitizeStringForProtobuf(source.Name),
 		Type:  source.Type,
 		Class: source.Class,
 		Ttl:   uint32(source.TTL),
 		Ip:    source.IP,
-		Ns:    sanitizeStringForProtobuf(source.NS),
-		Cname: sanitizeStringForProtobuf(source.CNAME),
-		Ptr:   sanitizeStringForProtobuf(source.PTR),
+		Ns:    SanitizeStringForProtobuf(source.NS),
+		Cname: SanitizeStringForProtobuf(source.CNAME),
+		Ptr:   SanitizeStringForProtobuf(source.PTR),
 		Txts:  sanitizeStringArrayForProtobuf(source.TXTs),
 		Soa: &pb.DNSSOA{
-			Mname:   sanitizeStringForProtobuf(source.SOA.MName),
-			Rname:   sanitizeStringForProtobuf(source.SOA.RName),
+			Mname:   SanitizeStringForProtobuf(source.SOA.MName),
+			Rname:   SanitizeStringForProtobuf(source.SOA.RName),
 			Serial:  source.SOA.Serial,
 			Refresh: source.SOA.Refresh,
 			Retry:   source.SOA.Retry,
@@ -1097,19 +1093,19 @@ func getDNSResourceRecord(source trace.ProtoDNSResourceRecord) *pb.DNSResourceRe
 			Priority: uint32(source.SRV.Priority),
 			Weight:   uint32(source.SRV.Weight),
 			Port:     uint32(source.SRV.Port),
-			Name:     sanitizeStringForProtobuf(source.SRV.Name),
+			Name:     SanitizeStringForProtobuf(source.SRV.Name),
 		},
 		Mx: &pb.DNSMX{
 			Preference: uint32(source.MX.Preference),
-			Name:       sanitizeStringForProtobuf(source.MX.Name),
+			Name:       SanitizeStringForProtobuf(source.MX.Name),
 		},
 		Opt: opts,
 		Uri: &pb.DNSURI{
 			Priority: uint32(source.URI.Priority),
 			Weight:   uint32(source.URI.Weight),
-			Target:   sanitizeStringForProtobuf(source.URI.Target),
+			Target:   SanitizeStringForProtobuf(source.URI.Target),
 		},
-		Txt: sanitizeStringForProtobuf(source.TXT),
+		Txt: SanitizeStringForProtobuf(source.TXT),
 	}
 }
 
@@ -1117,13 +1113,13 @@ func convertPktMeta(v *trace.PktMeta) (*pb.EventValue, error) {
 	return &pb.EventValue{
 		Value: &pb.EventValue_PacketMetadata{
 			PacketMetadata: &pb.PacketMetadata{
-				SrcIp:     sanitizeStringForProtobuf(v.SrcIP),
-				DstIp:     sanitizeStringForProtobuf(v.DstIP),
+				SrcIp:     SanitizeStringForProtobuf(v.SrcIP),
+				DstIp:     SanitizeStringForProtobuf(v.DstIP),
 				SrcPort:   uint32(v.SrcPort),
 				DstPort:   uint32(v.DstPort),
 				Protocol:  uint32(v.Protocol),
 				PacketLen: v.PacketLen,
-				Iface:     sanitizeStringForProtobuf(v.Iface),
+				Iface:     SanitizeStringForProtobuf(v.Iface),
 			},
 		},
 	}, nil
@@ -1160,9 +1156,9 @@ func convertProtoHTTPResponse(v *trace.ProtoHTTPResponse) (*pb.EventValue, error
 	return &pb.EventValue{
 		Value: &pb.EventValue_HttpResponse{
 			HttpResponse: &pb.HTTPResponse{
-				Status:        sanitizeStringForProtobuf(v.Status),
+				Status:        SanitizeStringForProtobuf(v.Status),
 				StatusCode:    int32(v.StatusCode),
-				Protocol:      sanitizeStringForProtobuf(v.Protocol),
+				Protocol:      SanitizeStringForProtobuf(v.Protocol),
 				Headers:       getHeaders(v.Headers),
 				ContentLength: v.ContentLength,
 			},
@@ -1174,10 +1170,10 @@ func convertProtoHttpRequest(v *trace.ProtoHTTPRequest) (*pb.EventValue, error) 
 	return &pb.EventValue{
 		Value: &pb.EventValue_HttpRequest{
 			HttpRequest: &pb.HTTPRequest{
-				Method:        sanitizeStringForProtobuf(v.Method),
-				Protocol:      sanitizeStringForProtobuf(v.Protocol),
+				Method:        SanitizeStringForProtobuf(v.Method),
+				Protocol:      SanitizeStringForProtobuf(v.Protocol),
 				Host:          v.Host,
-				UriPath:       sanitizeStringForProtobuf(v.URIPath),
+				UriPath:       SanitizeStringForProtobuf(v.URIPath),
 				Headers:       getHeaders(v.Headers),
 				ContentLength: v.ContentLength,
 			},
@@ -1190,11 +1186,11 @@ func convertProtoHttp(v *trace.ProtoHTTP) (*pb.EventValue, error) {
 		Value: &pb.EventValue_Http{
 			Http: &pb.HTTP{
 				Direction:     v.Direction,
-				Method:        sanitizeStringForProtobuf(v.Method),
-				Protocol:      sanitizeStringForProtobuf(v.Protocol),
-				Host:          sanitizeStringForProtobuf(v.Host),
-				UriPath:       sanitizeStringForProtobuf(v.URIPath),
-				Status:        sanitizeStringForProtobuf(v.Status),
+				Method:        SanitizeStringForProtobuf(v.Method),
+				Protocol:      SanitizeStringForProtobuf(v.Protocol),
+				Host:          SanitizeStringForProtobuf(v.Host),
+				UriPath:       SanitizeStringForProtobuf(v.URIPath),
+				Status:        SanitizeStringForProtobuf(v.Status),
 				StatusCode:    int32(v.StatusCode),
 				Headers:       getHeaders(v.Headers),
 				ContentLength: v.ContentLength,
