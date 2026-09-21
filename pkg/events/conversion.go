@@ -741,13 +741,13 @@ func getSockaddr(v map[string]string) (*pb.EventValue, error) {
 		sockaddr = &pb.SockAddr{
 			SaFamily: pb.SaFamilyT_AF_INET,
 			SinPort:  uint32(sinport),
-			SinAddr:  v["sin_addr"],
+			SinAddr:  SanitizeStringForProtobuf(v["sin_addr"]),
 		}
 
 	case "AF_UNIX":
 		sockaddr = &pb.SockAddr{
 			SaFamily: pb.SaFamilyT_AF_UNIX,
-			SunPath:  v["sun_path"],
+			SunPath:  SanitizeStringForProtobuf(v["sun_path"]),
 		}
 
 	case "AF_INET6":
@@ -768,7 +768,7 @@ func getSockaddr(v map[string]string) (*pb.EventValue, error) {
 			Sin6Port:     uint32(sinport),
 			Sin6Flowinfo: uint32(sin6Flowinfo),
 			Sin6Scopeid:  uint32(sin6Scopeid),
-			Sin6Addr:     v["sin6_addr"],
+			Sin6Addr:     SanitizeStringForProtobuf(v["sin6_addr"]),
 		}
 	}
 
@@ -924,7 +924,7 @@ func convertIpv4(v *trace.ProtoIPv4) (*pb.EventValue, error) {
 				Ttl:        uint32(v.TTL),
 				Protocol:   SanitizeStringForProtobuf(v.Protocol),
 				Checksum:   uint32(v.Checksum),
-				SrcIp:      v.SrcIP,
+				SrcIp:      SanitizeStringForProtobuf(v.SrcIP),
 				DstIp:      SanitizeStringForProtobuf(v.DstIP),
 			},
 		},
@@ -1172,7 +1172,7 @@ func convertProtoHttpRequest(v *trace.ProtoHTTPRequest) (*pb.EventValue, error) 
 			HttpRequest: &pb.HTTPRequest{
 				Method:        SanitizeStringForProtobuf(v.Method),
 				Protocol:      SanitizeStringForProtobuf(v.Protocol),
-				Host:          v.Host,
+				Host:          SanitizeStringForProtobuf(v.Host),
 				UriPath:       SanitizeStringForProtobuf(v.URIPath),
 				Headers:       getHeaders(v.Headers),
 				ContentLength: v.ContentLength,
