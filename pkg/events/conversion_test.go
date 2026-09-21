@@ -1472,3 +1472,60 @@ func TestConvertToProto_EventData_HTTPRequest_InvalidUTF8Host(t *testing.T) {
 	_, err := proto.Marshal(protoEvent)
 	require.NoError(t, err, "proto.Marshal must accept the converted event")
 }
+
+// TestConvertTraceeEventToProto_SockAddr_OtherFamilies covers sockaddr
+// families the pb.SaFamilyT enum does not have. The decoder reports them with
+// sa_family set and nothing else (readSockaddrFromBuff only decodes the
+// address body for AF_UNIX, AF_INET and AF_INET6), and the converter used to
+// turn them into an empty SockAddr, which reads as "no address" and loses the
+// family. A NULL sockaddr pointer is captured as family 0 and stays a SockAddr
+// with an explicit UNSPEC family.
+func TestConvertTraceeEventToProto_SockAddr_OtherFamilies(t *testing.T) {
+	t.Parallel()
+
+	newEvent := func(argValue map[string]string) trace.Event {
+		return trace.Event{
+			EventID:   int(Getsockname),
+			EventName: "getsockname",
+			Args: []trace.Argument{
+				{
+					ArgMeta: trace.ArgMeta{Name: "addr", Type: "struct sockaddr*"},
+					Value:   argValue,
+				},
+			},
+		}
+	}
+
+	for _, family := range []string{"AF_NETLINK", "AF_PACKET", "AF_VSOCK"} {
+		t.Run(family, func(t *testing.T) {
+			t.Parallel()
+
+			protoEvent, err := ConvertTraceeEventToProto(newEvent(map[string]string{"sa_family": family}))
+			require.NoError(t, err)
+			require.Len(t, protoEvent.Data, 1)
+
+			assert.Nil(t, protoEvent.Data[0].GetSockaddr(), "no SockAddr for a family the enum cannot express")
+			s := protoEvent.Data[0].GetStruct()
+			require.NotNil(t, s, "the decoded fields must survive as a struct")
+			assert.Equal(t, family, s.GetFields()["sa_family"].GetStringValue())
+
+			_, err = proto.Marshal(protoEvent)
+			require.NoError(t, err)
+		})
+	}
+
+	t.Run("AF_UNSPEC", func(t *testing.T) {
+		t.Parallel()
+
+		protoEvent, err := ConvertTraceeEventToProto(newEvent(map[string]string{"sa_family": "AF_UNSPEC"}))
+		require.NoError(t, err)
+		require.Len(t, protoEvent.Data, 1)
+
+		sa := protoEvent.Data[0].GetSockaddr()
+		require.NotNil(t, sa)
+		assert.Equal(t, pb.SaFamilyT_SA_FAMILY_T_UNSPEC, sa.GetSaFamily())
+
+		_, err = proto.Marshal(protoEvent)
+		require.NoError(t, err)
+	})
+}

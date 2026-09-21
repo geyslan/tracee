@@ -730,6 +730,9 @@ func getCaps(c uint64) []pb.Capability {
 	return caps
 }
 
+// getSockaddr converts a decoded sockaddr (bufferdecoder.readSockaddrFromBuff)
+// to a pb.SockAddr. Families without a pb.SaFamilyT value are kept as a struct
+// of their string fields so the family name is not lost.
 func getSockaddr(v map[string]string) (*pb.EventValue, error) {
 	var sockaddr *pb.SockAddr
 	switch v["sa_family"] {
@@ -770,9 +773,38 @@ func getSockaddr(v map[string]string) (*pb.EventValue, error) {
 			Sin6Scopeid:  uint32(sin6Scopeid),
 			Sin6Addr:     SanitizeStringForProtobuf(v["sin6_addr"]),
 		}
+
+	case "AF_UNSPEC":
+		// A NULL sockaddr pointer is captured as family 0 (SOCKADDR_T in
+		// pkg/ebpf/c/common/buffer.h); report it as an explicit UNSPEC
+		// address rather than a nil message.
+		sockaddr = &pb.SockAddr{SaFamily: pb.SaFamilyT_SA_FAMILY_T_UNSPEC}
+
+	default:
+		// pb.SaFamilyT only has AF_UNIX, AF_INET and AF_INET6, but the decoder
+		// reports every family the kernel has (AF_NETLINK, AF_PACKET, ...) with
+		// sa_family set and no address fields. An empty SockAddr would read as
+		// "no address" and drop the family, so keep the fields as a struct.
+		return sockaddrMapToStruct(v)
 	}
 
 	return &pb.EventValue{Value: &pb.EventValue_Sockaddr{Sockaddr: sockaddr}}, nil
+}
+
+// sockaddrMapToStruct represents a decoded sockaddr whose family has no
+// pb.SockAddr mapping as a struct of its (sanitized) string fields.
+func sockaddrMapToStruct(v map[string]string) (*pb.EventValue, error) {
+	fields := make(map[string]interface{}, len(v))
+	for k, val := range v {
+		fields[SanitizeStringForProtobuf(k)] = SanitizeStringForProtobuf(val)
+	}
+
+	s, err := structpb.NewStruct(fields)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.EventValue{Value: &pb.EventValue_Struct{Struct: s}}, nil
 }
 
 // SanitizeStringForProtobuf returns s with every maximal run of invalid UTF-8
