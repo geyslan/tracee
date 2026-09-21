@@ -411,39 +411,6 @@ func fillEventValue(ev *pb.EventValue, arg trace.Argument) (bool, error) {
 	return true, nil
 }
 
-// getEventData converts trace.Event.Args to protobuf EventValue array
-func getEventData(e trace.Event) ([]*pb.EventValue, error) {
-	data := make([]*pb.EventValue, 0, len(e.Args))
-
-	for _, arg := range e.Args {
-		// Handle special detectedFrom argument (corresponds to DetectedFrom in protobuf)
-		if arg.ArgMeta.Name == "detectedFrom" {
-			// Skip it here - it will be handled separately in ConvertToProto
-			continue
-		}
-
-		eventValue, err := parseArgument(arg)
-		if err != nil {
-			return nil, errfmt.Errorf("can't convert event data: %s - %v - %T", arg.Name, arg.Value, arg.Value)
-		}
-
-		// Skip if conversion not supported for this type
-		if eventValue == nil {
-			logger.Errorw(
-				"Can't convert event argument. Please add it as a GRPC event data type or implement detect.FindingDataStruct interface.",
-				"name", arg.Name,
-				"type", fmt.Sprintf("%T", arg.Value),
-			)
-			continue
-		}
-
-		eventValue.Name = SanitizeStringForProtobuf(arg.ArgMeta.Name)
-		data = append(data, eventValue)
-	}
-
-	return data, nil
-}
-
 // parseArgument converts a single trace.Argument to protobuf EventValue
 func parseArgument(arg trace.Argument) (*pb.EventValue, error) {
 	switch v := arg.Value.(type) {
